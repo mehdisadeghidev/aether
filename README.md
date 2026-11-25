@@ -94,6 +94,10 @@ If the router also sends its own traffic into a tun front end (hev-socks5-tunnel
 
 To run the same HTTP/2 setup PattNG uses on Android, and to start it on boot, see [OpenWrt as a service](Docs/OPENWRT.en.md). A release whose `aether help` does not list `--masque-sni`, including v2.3.0, still uses the older server name. That guide builds a current binary and installs the service.
 
+### VyOS
+
+VyOS is not a binary install: the router starts the container from its own config, so `/config` survives reboots and upgrades. Passing `--tun` gives Aether a device instead of a SOCKS port, and the kernel then routes a LAN through the tunnel, UDP and DNS included. See [A whole network behind Aether on VyOS](Docs/VYOS.en.md) for the container settings, the routing hook with its kill switch, and what to check when the handshake works but no data returns.
+
 ## Build
 
 ### Requirements

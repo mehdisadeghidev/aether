@@ -64,6 +64,7 @@ import subprocess
 import sys
 import textwrap
 import urllib.parse
+from typing import NoReturn
 
 NOTICE_NAME = re.compile(
     r"^(?:LICEN[CS]E|COPYING|NOTICE|COPYRIGHT|UNLICENSE)(?:[-._].*)?$",
@@ -121,14 +122,14 @@ STD_COPYRIGHT = re.compile(
 )
 
 
-def fail(message):
+def fail(message) -> NoReturn:
     print(f"third-party-notices: {message}", file=sys.stderr)
     sys.exit(1)
 
 
 def run_tool(command, cwd=None):
     try:
-        run = subprocess.run(command, stdout=subprocess.PIPE, stderr=subprocess.PIPE, cwd=cwd)
+        run = subprocess.run(command, capture_output=True, cwd=cwd)
     except OSError as error:
         fail(f"cannot run {command[0]}: {error}")
     if run.returncode != 0:
@@ -471,7 +472,7 @@ def describe_source(package, tree_root):
 
 def main():
     here = os.path.dirname(os.path.abspath(__file__))
-    parser = argparse.ArgumentParser(description=__doc__.split("\n", 1)[0])
+    parser = argparse.ArgumentParser(description=(__doc__ or "").split("\n", 1)[0])
     parser.add_argument("--target", required=True, help="the target triple of the build")
     parser.add_argument("--features", default="", help="the features of the build, e.g. tor")
     parser.add_argument(

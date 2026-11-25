@@ -19,8 +19,8 @@ ENV PATH="/usr/local/go/bin:${PATH}"
 
 WORKDIR /usr/src/app
 
-COPY pt-build.sh ./pt-build.sh
-COPY psiphon-build.sh ./psiphon-build.sh
+COPY scripts/build-pt.sh ./pt-build.sh
+COPY scripts/build-psiphon.sh ./psiphon-build.sh
 COPY aether ./aether
 COPY quiche ./quiche
 

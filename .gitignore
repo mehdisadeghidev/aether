@@ -29,6 +29,10 @@ routes-*.conf
 # Large, machine-local and rebuilt on demand.
 *-tor/
 
-# Pluggable transport binaries put here by pt-build.sh. The release archives
-# carry their own, built for the target they ship to.
+# Pluggable transport binaries put here by scripts/build-pt.sh. The image
+# carries its own, built for the platform it ships to.
 pt/
+
+# Python caches from the license-notice script.
+__pycache__/
+.ruff_cache/

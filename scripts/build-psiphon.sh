@@ -14,7 +14,7 @@ goarm="${4:-}"
 licensedir="${5:-}"
 
 if [ -z "$goos" ] || [ -z "$goarch" ] || [ -z "$out" ]; then
-    echo "usage: psiphon-build.sh <goos> <goarch> <outdir> [goarm] [licensedir]" >&2
+    echo "usage: scripts/build-psiphon.sh <goos> <goarch> <outdir> [goarm] [licensedir]" >&2
     exit 2
 fi
 

@@ -247,10 +247,10 @@ pub fn install_hint() -> String {
 
     format!(
         "psiphon needs the psiphon-tunnel-core console client, and it was not in {looked} or on \
-         PATH. every release archive ships it in the pt folder beside the binary, so keep that \
-         folder next to aether instead of moving the binary out on its own. from source run \
-         'bash psiphon-build.sh {goos} {goarch} pt'. point AETHER_PSIPHON_BIN at one you already \
-         have"
+         PATH. the image ships it in the pt folder beside the binary, so keep that folder next to \
+         aether instead of moving the binary out on its own. from source run \
+         'bash scripts/build-psiphon.sh {goos} {goarch} pt'. point AETHER_PSIPHON_BIN at one you \
+         already have"
     )
 }
 

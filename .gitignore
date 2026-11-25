@@ -1,5 +1,4 @@
 target/
-**/target/
 *.zip
 *.tar.gz
 .DS_Store

@@ -95,43 +95,30 @@ docker run -it -p 127.0.0.1:1819:1819 -v aether-data:/data aether
 - CMake
 - Go, for the pluggable transports and psiphon
 
-The `quiche` repository must be placed alongside `aether`:
-
-```text
-<repo>/
-  aether/
-  quiche/
-```
-
-Build from the repository root; the Cargo manifest is `aether/Cargo.toml`, so enter that directory first:
+From the repository root:
 
 ```bash
-cd aether
-bash ../scripts/build-pt.sh linux amd64 pt
-bash ../scripts/build-psiphon.sh linux amd64 pt
+bash scripts/build-pt.sh linux amd64 pt
+bash scripts/build-psiphon.sh linux amd64 pt
 cargo build --release --locked --features tor
 ```
 
-Binary, relative to the repository root:
+The binary is `target/release/aether`.
 
-```text
-aether/target/release/aether
-```
-
-The transports the `--tor*` modes need are written to `aether/pt`, which Aether looks for next to the binary.
+The transports the `--tor*` modes need are written to `pt/`, which Aether looks for next to the binary.
 
 ## Usage
 
 Run with no arguments and answer the prompts:
 
 ```bash
-./aether/target/release/aether
+./target/release/aether
 ```
 
 Or skip the prompts with flags:
 
 ```bash
-./aether/target/release/aether --masque -4 --scan turbo --noize firewall
+./target/release/aether --masque -4 --scan turbo --noize firewall
 ```
 
 Every prompt has a flag and an environment variable equivalent. Run `aether help` (or `--help`) for the full list — every flag, every variable, and what each one does.
@@ -159,7 +146,7 @@ Fast and lightweight transport for networks with less aggressive inspection.
 A MASQUE tunnel carried inside another MASQUE tunnel. The inner hop is dialled from inside the outer one, so Cloudflare sees the outer edge instead of your address and hands the inner tunnel a different exit IP — the same idea as `gool`, with a MASQUE tunnel inside instead of a WireGuard one. Both hops use HTTP/3, or both use HTTP/2 with `--h2`.
 
 ```bash
-./aether/target/release/aether --mim
+./target/release/aether --mim
 ```
 
 ### WireGuard over MASQUE (`--gool`)
@@ -167,7 +154,7 @@ A MASQUE tunnel carried inside another MASQUE tunnel. The inner hop is dialled f
 A WireGuard tunnel carried inside a MASQUE tunnel. Your network sees only the MASQUE hop; the WireGuard hop is dialled from inside it, so Cloudflare sees the MASQUE edge instead of your address and hands the WireGuard tunnel a different exit IP. The MASQUE hop is found by the scan or named with `--peer`; the WireGuard hop is the endpoint its key names, on port 2408, unless `--gool-peer` names another.
 
 ```bash
-./aether/target/release/aether --gool
+./target/release/aether --gool
 ```
 
 ### Nested WireGuard (`--gool-classic`)
@@ -187,7 +174,7 @@ Built with the `tor` feature, Aether carries a Tor implementation (arti) and can
 | Tor alone | `--tor-only` | you → Tor → internet | a Tor exit |
 
 ```bash
-./aether/target/release/aether --masque --tor
+./target/release/aether --masque --tor
 ```
 
 With `--tor` the usual proxy on `127.0.0.1:1819` keeps the WARP exit and a second one on `127.0.0.1:1820` comes out of Tor. Because Tor rides inside the tunnel, a network that blocks Tor never sees it. Any transport can carry it — `--masque` over HTTP/3 or HTTP/2, `--wg`, `--gool`, `--mim` — with nothing in between: `--wg --tor` has the WireGuard tunnel carry Tor directly. The other direction cannot do that, because Tor carries TCP only and WARP's WireGuard endpoints answer on UDP alone, so `--tor-reverse` runs MASQUE over HTTP/2 (for `--gool`, its MASQUE hop) and refuses `--wg` and `--gool-classic`. `--tor-reverse` and `--tor-only` reach Tor directly, and where Tor is blocked they fetch their own bridges from bridgedb and run them through the pluggable transports in the `pt/` folder, so there is nothing to install and nothing to paste in.
@@ -195,8 +182,8 @@ With `--tor` the usual proxy on `127.0.0.1:1819` keeps the WARP exit and a secon
 ## Repository layout
 
 ```text
-aether/         the crate
-quiche/         vendored QUIC/HTTP-3 library, a path dependency
+src/            the crate
+Cargo.toml      its manifest; quiche and octets come from crates.io
 scripts/        build helpers: pluggable transports, psiphon, h2 benchmark
 Dockerfile      the released image
 ```

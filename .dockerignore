@@ -1,8 +1,6 @@
 .git
 .github
 target/
-aether/target/
-quiche/target/
 **/.DS_Store
 **/aether.toml
 **/aether-*.toml
@@ -12,8 +10,6 @@ quiche/target/
 **/.*.toml.*.tmp
 *.pem
 *.key
-aether/**/*.pem
-aether/**/*.key
 **/routes.conf
 **/routes-*.conf
 **/pt/

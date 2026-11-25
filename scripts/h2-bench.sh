@@ -66,10 +66,8 @@ esac
 if [ -z "$BIN" ]; then
     here="$(cd "$(dirname "$0")" && pwd)"
     for candidate in \
-        "$here/aether/target/release/aether" \
-        "$here/aether/target/debug/aether" \
-        "$here/target/release/aether" \
-        "$here/target/debug/aether" \
+        "$here/../target/release/aether" \
+        "$here/../target/debug/aether" \
         "$(command -v aether 2>/dev/null)"
     do
         if [ -n "$candidate" ] && [ -x "$candidate" ]; then BIN="$candidate"; break; fi

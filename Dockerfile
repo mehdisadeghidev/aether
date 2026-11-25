@@ -21,13 +21,11 @@ WORKDIR /usr/src/app
 
 COPY scripts/build-pt.sh ./pt-build.sh
 COPY scripts/build-psiphon.sh ./psiphon-build.sh
-COPY aether ./aether
-COPY quiche ./quiche
+COPY Cargo.toml Cargo.lock ./
+COPY src ./src
 
-WORKDIR /usr/src/app/aether
-
-RUN bash ../pt-build.sh linux "$(dpkg --print-architecture)" /usr/src/app/aether/pt
-RUN bash ../psiphon-build.sh linux "$(dpkg --print-architecture)" /usr/src/app/aether/pt
+RUN bash ./pt-build.sh linux "$(dpkg --print-architecture)" /usr/src/app/pt
+RUN bash ./psiphon-build.sh linux "$(dpkg --print-architecture)" /usr/src/app/pt
 
 RUN cargo build --release --locked --features tor
 
@@ -35,8 +33,8 @@ FROM gcr.io/distroless/cc-debian12
 
 WORKDIR /app
 
-COPY --from=builder /usr/src/app/aether/target/release/aether /usr/local/bin/aether
-COPY --from=builder /usr/src/app/aether/pt /usr/local/bin/pt
+COPY --from=builder /usr/src/app/target/release/aether /usr/local/bin/aether
+COPY --from=builder /usr/src/app/pt /usr/local/bin/pt
 
 ENV AETHER_SOCKS=0.0.0.0:1819
 ENV AETHER_CONFIG=/data/aether.toml

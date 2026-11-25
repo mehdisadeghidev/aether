@@ -174,9 +174,11 @@ async fn run_masque_in_masque(
             startup: masque_startup_timeout(),
             label: "outer",
         },
+        None,
     )
     .await?;
 
+    let outer_stack = outer.wire.needs_stack("masque-in-masque")?;
     let mut chosen: Option<(SocketAddr, MasqueHop, TaskGuard)> = None;
 
     for inner_peer in inner_peers
@@ -194,9 +196,9 @@ async fn run_masque_in_masque(
         }
 
         let (forwarder, forwarder_guard) = if h2 {
-            spawn_tcp_forwarder(&outer.stack, inner_peer).await?
+            spawn_tcp_forwarder(outer_stack, inner_peer).await?
         } else {
-            spawn_udp_forwarder(&outer.stack, inner_peer).await?
+            spawn_udp_forwarder(outer_stack, inner_peer).await?
         };
         log::info!(
             "[*] trying inner MASQUE edge {inner_peer} through the outer tunnel via {forwarder}"
@@ -215,6 +217,7 @@ async fn run_masque_in_masque(
                 startup: mim_inner_startup(),
                 label: "inner",
             },
+            None,
         )
         .await
         {
@@ -234,7 +237,8 @@ async fn run_masque_in_masque(
     };
 
     let policy = exitloc::Policy::from_env();
-    exitloc::settle(&inner.stack, &policy, "masque-in-masque").await?;
+    let inner_stack = inner.wire.needs_stack("masque-in-masque")?;
+    exitloc::settle(inner_stack, &policy, "masque-in-masque").await?;
 
     log::info!("[+] masque-in-masque ready: {peer} (outer) and {inner_peer} (inner)");
 
@@ -248,8 +252,8 @@ async fn run_masque_in_masque(
     let (outcome, winner) = tokio::select! {
         result = &mut outer.exit => (join_outcome("outer masque tunnel", result), Winner::Outer),
         result = &mut inner.exit => (join_outcome("inner masque tunnel", result), Winner::Inner),
-        never = listeners.serve(&inner.stack) => match never {},
-        reason = exit_policy_guard(&inner.stack, &policy) => (Err(reason), Winner::Policy),
+        never = listeners.serve(inner_stack) => match never {},
+        reason = exit_policy_guard(inner.wire.stack(), &policy) => (Err(reason), Winner::Policy),
     };
 
     if winner != Winner::Outer {

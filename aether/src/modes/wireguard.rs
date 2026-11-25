@@ -3,14 +3,12 @@ use std::net::{IpAddr, SocketAddr};
 use std::time::Instant;
 
 use super::{
-    aethernoize_config, count_tunnel_end, exit_policy_guard, scan_settings_from_env, team_endpoint,
-    Listeners, TunnelError, TunnelExit, TUNNEL_MTU,
+    aethernoize_config, count_tunnel_end, exit_policy_guard, packet_wire, scan_settings_from_env,
+    team_endpoint, Frontend, TunnelError, TunnelExit, Wire, TUNNEL_MTU,
 };
 use crate::error::{AetherError, Result};
 use crate::prompt::{select_ip_version, select_scan_mode_str, want_quick_reconnect};
-use crate::{
-    account, aethernoize, exitloc, lastconn, netstack, prober, sysprofile, wg_prober, wireguard,
-};
+use crate::{account, aethernoize, exitloc, lastconn, prober, sysprofile, wg_prober, wireguard};
 
 pub(crate) async fn select_wg_peers(
     identity: &account::Identity,
@@ -197,10 +195,14 @@ fn pinned_peer() -> Option<String> {
 
 pub(crate) async fn run_wireguard(
     identity: account::Identity,
-    listeners: Listeners,
+    frontend: Frontend,
     lastconn_path: String,
 ) -> Result<()> {
     let candidates = wg_profile_candidates();
+
+    if let Some(tun) = frontend.tun() {
+        tun.configure(&identity.ipv4, &identity.ipv6, TUNNEL_MTU)?;
+    }
 
     let forced = pinned_peer();
 
@@ -444,7 +446,7 @@ pub(crate) async fn run_wireguard(
             peer,
             profile,
             wg_keepalive_secs(),
-            &listeners,
+            &frontend,
         )
         .await
         {
@@ -472,7 +474,7 @@ pub(crate) async fn run_wireguard_tunnel(
     peer: SocketAddr,
     aethernoize: aethernoize::AetherNoizeConfig,
     keepalive: u16,
-    listeners: &Listeners,
+    frontend: &Frontend,
 ) -> Result<()> {
     let private_key = identity.private_key_bytes()?;
     let peer_public = identity.peer_public_key_bytes()?;
@@ -505,7 +507,8 @@ pub(crate) async fn run_wireguard_tunnel(
         ipv4,
     );
 
-    let stack = netstack::spawn(
+    let mut wire = packet_wire(
+        frontend.tun().as_ref(),
         &identity.ipv4,
         &identity.ipv6,
         TUNNEL_MTU,
@@ -514,15 +517,18 @@ pub(crate) async fn run_wireguard_tunnel(
     )?;
 
     let policy = exitloc::Policy::from_env();
-    exitloc::settle(&stack, &policy, "wireguard").await?;
+    let stack = wire.stack().cloned();
+    if let Some(stack) = &stack {
+        exitloc::settle(stack, &policy, "wireguard").await?;
+    }
 
     let tunnel_result = tokio::select! {
         result = tunnel.run(outbound_rx) => result,
-        reason = exit_policy_guard(&stack, &policy) => return Err(reason),
-        never = listeners.serve(&stack) => match never {},
+        reason = exit_policy_guard(stack.as_ref(), &policy) => return Err(reason),
+        reason = wire.serve(frontend) => return Err(reason),
     };
 
-    drop(stack);
+    drop(wire);
 
     match tunnel_result {
         Ok(()) => Ok(()),
@@ -539,7 +545,8 @@ pub(crate) async fn establish_wg(
     obfuscate: bool,
     keepalive: u16,
     label: &'static str,
-) -> Result<(netstack::StackHandle, TunnelExit)> {
+    tun: Option<&std::sync::Arc<crate::tun::Tun>>,
+) -> Result<(Wire, TunnelExit)> {
     let private_key = identity.private_key_bytes()?;
     let peer_public = identity.peer_public_key_bytes()?;
 
@@ -582,7 +589,14 @@ pub(crate) async fn establish_wg(
         inbound_tx,
         ipv4,
     );
-    let stack = netstack::spawn(&identity.ipv4, &identity.ipv6, mtu, inbound_rx, outbound_tx)?;
+    let wire = packet_wire(
+        tun,
+        &identity.ipv4,
+        &identity.ipv6,
+        mtu,
+        inbound_rx,
+        outbound_tx,
+    )?;
 
     let exit = tokio::spawn(async move {
         match tunnel.run(outbound_rx).await {
@@ -600,5 +614,5 @@ pub(crate) async fn establish_wg(
         }
     });
 
-    Ok((stack, exit))
+    Ok((wire, exit))
 }

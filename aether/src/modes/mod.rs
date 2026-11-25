@@ -7,7 +7,7 @@ pub mod wireguard;
 use std::net::{IpAddr, Ipv4Addr, SocketAddr};
 
 use crate::error::{AetherError, Result};
-use crate::{aethernoize, exitloc, masque_h2, netstack, noize, prober, socks};
+use crate::{aethernoize, exitloc, masque_h2, netstack, noize, prober, socks, tun};
 
 #[derive(Debug, thiserror::Error)]
 pub enum TunnelError {
@@ -46,6 +46,10 @@ pub enum TunnelError {
     NoWireGuardEndpoint,
     #[error("the {what} stopped{reason}")]
     ServerStopped { what: &'static str, reason: String },
+    #[error(
+        "{what} needs the userspace tcp stack that --tun replaces, so it cannot run with --tun"
+    )]
+    NoStack { what: &'static str },
 }
 
 pub(crate) fn parse_local_v4(s: &str) -> Ipv4Addr {
@@ -128,6 +132,146 @@ impl Listeners {
     }
 }
 
+/// Where a tunnel's packets meet this machine: the socks front end's userspace
+/// stack, which terminates what clients ask it to carry, or a tun device, where
+/// the kernel does the same job.
+pub(crate) enum Wire {
+    Stack(netstack::StackHandle),
+    Tun(tun::TunFrontend),
+}
+
+impl Wire {
+    pub(crate) fn stack(&self) -> Option<&netstack::StackHandle> {
+        match self {
+            Wire::Stack(stack) => Some(stack),
+            Wire::Tun(_) => None,
+        }
+    }
+
+    pub(crate) fn needs_stack(&self, what: &'static str) -> Result<&netstack::StackHandle> {
+        self.stack()
+            .ok_or_else(|| AetherError::from(TunnelError::NoStack { what }))
+    }
+
+    /// What the tunnel waits on beside its own task. A stack is carried by the
+    /// socks listeners and never ends; a tun reports how its pump died.
+    pub(crate) async fn serve(&mut self, frontend: &Frontend) -> AetherError {
+        match (self, frontend) {
+            (Wire::Stack(stack), Frontend::Socks(listeners)) => {
+                match listeners.serve(stack).await {}
+            }
+            (Wire::Tun(front), _) => front.wait().await.into(),
+            (Wire::Stack(_), Frontend::Tun(_)) => AetherError::from(TunnelError::NoStack {
+                what: "the socks listeners",
+            }),
+        }
+    }
+}
+
+/// What a tunnel is served on. Picked once, from `--tun`, and carried through
+/// every reconnect.
+pub(crate) enum Frontend {
+    Socks(Listeners),
+    Tun(std::sync::Arc<tun::Tun>),
+}
+
+impl Frontend {
+    pub(crate) async fn bind(
+        listen: SocketAddr,
+        broken: tokio::sync::mpsc::UnboundedSender<AetherError>,
+    ) -> Result<Self> {
+        let Some(name) = env_value("AETHER_TUN") else {
+            return Ok(Frontend::Socks(Listeners::bind(listen, broken).await?));
+        };
+
+        for (key, flag) in [
+            ("AETHER_SOCKS", "--bind"),
+            ("AETHER_HTTP_PROXY", "--http-proxy"),
+            ("AETHER_ROUTES_FILE", "--routes"),
+            ("AETHER_ROUTE_BLOCK", "--route-block"),
+            ("AETHER_ROUTE_DIRECT", "--route-direct"),
+        ] {
+            if crate::settings::var(key).is_ok() {
+                log::warn!("[-] {flag} belongs to the socks5 front end and is ignored with --tun");
+            }
+        }
+
+        if crate::settings::var("AETHER_MARK").is_err() {
+            log::warn!(
+                "[-] --mark is not set: on a router that routes traffic into the tun, the \
+                 tunnel's own sockets will loop back into it; set --mark and let a rule around \
+                 that mark reach the internet directly"
+            );
+        }
+
+        let tun = tun::Tun::open(&name)?;
+        log::info!("[+] serving the tunnel on tun {name} instead of socks5");
+        Ok(Frontend::Tun(std::sync::Arc::new(tun)))
+    }
+
+    pub(crate) fn tun(&self) -> Option<std::sync::Arc<tun::Tun>> {
+        match self {
+            Frontend::Socks(_) => None,
+            Frontend::Tun(tun) => Some(tun.clone()),
+        }
+    }
+
+    pub(crate) fn listeners(&self) -> Result<&Listeners> {
+        match self {
+            Frontend::Socks(listeners) => Ok(listeners),
+            Frontend::Tun(_) => Err(AetherError::from(TunnelError::NoStack {
+                what: "the socks5 front end",
+            })),
+        }
+    }
+
+    pub(crate) fn socks_addr(&self) -> Option<SocketAddr> {
+        match self {
+            Frontend::Socks(listeners) => listeners.socks.local_addr().ok(),
+            Frontend::Tun(_) => None,
+        }
+    }
+
+    pub(crate) fn into_socks(self) -> Result<tokio::net::TcpListener> {
+        match self {
+            Frontend::Socks(listeners) => Ok(listeners.into_socks()),
+            Frontend::Tun(_) => Err(AetherError::from(TunnelError::NoStack {
+                what: "tor-only and psiphon-only",
+            })),
+        }
+    }
+
+    pub(crate) fn into_listeners(self) -> Result<Listeners> {
+        match self {
+            Frontend::Socks(listeners) => Ok(listeners),
+            Frontend::Tun(_) => Err(AetherError::from(TunnelError::NoStack {
+                what: "a nested tunnel",
+            })),
+        }
+    }
+}
+
+/// The one place a tunnel chooses between the userspace stack and the device.
+pub(crate) fn packet_wire(
+    tun: Option<&std::sync::Arc<tun::Tun>>,
+    ipv4: &str,
+    ipv6: &str,
+    mtu: usize,
+    inbound_rx: tokio::sync::mpsc::Receiver<Vec<u8>>,
+    outbound_tx: tokio::sync::mpsc::Sender<Vec<u8>>,
+) -> Result<Wire> {
+    match tun {
+        Some(tun) => Ok(Wire::Tun(tun.pump(mtu, inbound_rx, outbound_tx))),
+        None => Ok(Wire::Stack(netstack::spawn(
+            ipv4,
+            ipv6,
+            mtu,
+            inbound_rx,
+            outbound_tx,
+        )?)),
+    }
+}
+
 pub(crate) fn env_value(key: &str) -> Option<String> {
     crate::settings::var(key)
         .ok()
@@ -183,12 +327,12 @@ fn count_tunnel_end(in_a_row: u32, lasted: std::time::Duration) -> u32 {
 }
 
 async fn exit_policy_guard(
-    stack: &netstack::StackHandle,
+    stack: Option<&netstack::StackHandle>,
     policy: &Option<exitloc::Policy>,
 ) -> AetherError {
-    match policy {
-        Some(policy) => exitloc::watch(stack, policy).await,
-        None => std::future::pending().await,
+    match (stack, policy) {
+        (Some(stack), Some(policy)) => exitloc::watch(stack, policy).await,
+        _ => std::future::pending().await,
     }
 }
 

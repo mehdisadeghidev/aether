@@ -45,6 +45,9 @@ pub enum AetherError {
     Netstack(#[from] crate::netstack::NetstackError),
 
     #[error(transparent)]
+    Tun(#[from] crate::tun::TunError),
+
+    #[error(transparent)]
     Socks(#[from] crate::socks::SocksError),
 
     #[error(transparent)]

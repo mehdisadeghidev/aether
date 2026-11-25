@@ -4,7 +4,7 @@ use std::time::Instant;
 
 use super::{
     count_tunnel_end, env_value, exit_policy_guard, masque_tunnel_mtu, noize_config, spread_hops,
-    verified_scan_selected, Listeners, TunnelError, INNER_MTU, TUNNEL_MTU,
+    verified_scan_selected, Frontend, Listeners, TunnelError, INNER_MTU, TUNNEL_MTU,
 };
 use crate::error::{AetherError, Result};
 use crate::modes::endpoints::{parse_endpoint, wiw_endpoints_with_fallback, WG_EXAMPLE_PORT};
@@ -164,20 +164,22 @@ async fn run_warp_in_warp(
     let mut tasks = TaskGuard::new();
 
     log::info!("[*] establishing outer WARP tunnel to {peer}...");
-    let (outer_stack, mut outer_exit) =
-        establish_wg(&primary, peer, TUNNEL_MTU, true, 5, "outer").await?;
+    let (outer_wire, mut outer_exit) =
+        establish_wg(&primary, peer, TUNNEL_MTU, true, 5, "outer", None).await?;
     tasks.push(outer_exit.abort_handle());
 
-    let (forwarder, _forwarder_guard) = spawn_udp_forwarder(&outer_stack, inner_peer).await?;
+    let outer_stack = outer_wire.needs_stack("gool")?;
+    let (forwarder, _forwarder_guard) = spawn_udp_forwarder(outer_stack, inner_peer).await?;
     log::info!("[+] inner endpoint {inner_peer} tunneled through outer warp via {forwarder}");
 
     log::info!("[*] establishing inner WARP tunnel (warp-in-warp)...");
-    let (inner_stack, mut inner_exit) =
-        establish_wg(&secondary, forwarder, INNER_MTU, false, 20, "inner").await?;
+    let (inner_wire, mut inner_exit) =
+        establish_wg(&secondary, forwarder, INNER_MTU, false, 20, "inner", None).await?;
     tasks.push(inner_exit.abort_handle());
 
+    let inner_stack = inner_wire.needs_stack("gool")?;
     let policy = exitloc::Policy::from_env();
-    exitloc::settle(&inner_stack, &policy, "warp-in-warp").await?;
+    exitloc::settle(inner_stack, &policy, "warp-in-warp").await?;
 
     #[derive(PartialEq)]
     enum Winner {
@@ -189,8 +191,8 @@ async fn run_warp_in_warp(
     let (outcome, winner) = tokio::select! {
         result = &mut outer_exit => (join_outcome("outer wireguard tunnel", result), Winner::Outer),
         result = &mut inner_exit => (join_outcome("inner wireguard tunnel", result), Winner::Inner),
-        never = listeners.serve(&inner_stack) => match never {},
-        reason = exit_policy_guard(&inner_stack, &policy) => (Err(reason), Winner::Policy),
+        never = listeners.serve(inner_stack) => match never {},
+        reason = exit_policy_guard(inner_wire.stack(), &policy) => (Err(reason), Winner::Policy),
     };
 
     if winner != Winner::Outer {
@@ -202,8 +204,8 @@ async fn run_warp_in_warp(
         let _ = inner_exit.await;
     }
 
-    drop(inner_stack);
-    drop(outer_stack);
+    drop(inner_wire);
+    drop(outer_wire);
 
     outcome
 }
@@ -270,9 +272,10 @@ pub(crate) async fn run_gool_tunnel(
     identity: &account::Identity,
     peer: SocketAddr,
     ech: Option<Vec<u8>>,
-    listeners: &Listeners,
+    frontend: &Frontend,
     inner_path: &str,
 ) -> Result<()> {
+    let listeners = frontend.listeners()?;
     let h2 = masque_h2::enabled();
     let dial = if h2 { masque_h2::h2_peer(peer) } else { peer };
 
@@ -289,19 +292,31 @@ pub(crate) async fn run_gool_tunnel(
             startup: masque_startup_timeout(),
             label: "outer",
         },
+        None,
     )
     .await?;
 
-    let inner_identity = gool_inner_identity(&outer.stack, inner_path).await?;
+    let outer_stack = outer.wire.needs_stack("gool")?;
+    let inner_identity = gool_inner_identity(outer_stack, inner_path).await?;
     let candidates = gool_inner_peers(&inner_identity)?;
 
     let mut established = None;
     let mut last_error = AetherError::from(TunnelError::NoWireGuardEndpoint);
     'peers: for inner_peer in candidates {
-        let (forwarder, forwarder_guard) = spawn_udp_forwarder(&outer.stack, inner_peer).await?;
+        let (forwarder, forwarder_guard) = spawn_udp_forwarder(outer_stack, inner_peer).await?;
         log::info!("[*] wireguard to {inner_peer} rides inside the masque tunnel via {forwarder}");
         for attempt in 1..=GOOL_INNER_ATTEMPTS {
-            match establish_wg(&inner_identity, forwarder, INNER_MTU, false, 25, "inner").await {
+            match establish_wg(
+                &inner_identity,
+                forwarder,
+                INNER_MTU,
+                false,
+                25,
+                "inner",
+                None,
+            )
+            .await
+            {
                 Ok(hop) => {
                     established = Some((inner_peer, hop, forwarder_guard));
                     break 'peers;
@@ -313,7 +328,7 @@ pub(crate) async fn run_gool_tunnel(
             }
         }
     }
-    let Some((inner_peer, (inner_stack, mut inner_exit), _forwarder_guard)) = established else {
+    let Some((inner_peer, (inner_wire, mut inner_exit), _forwarder_guard)) = established else {
         return Err(last_error);
     };
     if inner_identity.assigned_endpoint != inner_peer.ip().to_string()
@@ -332,7 +347,8 @@ pub(crate) async fn run_gool_tunnel(
     }
 
     let policy = exitloc::Policy::from_env();
-    exitloc::settle(&inner_stack, &policy, "gool").await?;
+    let inner_stack = inner_wire.needs_stack("gool")?;
+    exitloc::settle(inner_stack, &policy, "gool").await?;
 
     log::info!("[+] gool ready: masque {peer} carries wireguard {inner_peer}");
 
@@ -346,8 +362,8 @@ pub(crate) async fn run_gool_tunnel(
     let (outcome, winner) = tokio::select! {
         result = &mut outer.exit => (join_outcome("outer masque tunnel", result), Winner::Outer),
         result = &mut inner_exit => (join_outcome("inner wireguard tunnel", result), Winner::Inner),
-        never = listeners.serve(&inner_stack) => match never {},
-        reason = exit_policy_guard(&inner_stack, &policy) => (Err(reason), Winner::Policy),
+        never = listeners.serve(inner_stack) => match never {},
+        reason = exit_policy_guard(inner_wire.stack(), &policy) => (Err(reason), Winner::Policy),
     };
 
     if winner != Winner::Outer {

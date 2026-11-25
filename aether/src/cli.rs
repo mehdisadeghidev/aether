@@ -23,6 +23,8 @@ pub enum CliError {
          http/2, or put psiphon inside the tunnel instead with --psiphon"
     )]
     UdpOverPsiphon(String),
+    #[error("--tun cannot carry {0}: it replaces socks5 with a kernel interface, and this mode needs the userspace tcp stack that socks5 gives it")]
+    TunNeedsStack(String),
     #[error("--bind {0} is not an address and port aether can listen on, such as 127.0.0.1:1819")]
     BadListen(String),
     #[error("--register takes masque, wg, gool, gool-classic, mim or all, not '{0}'")]
@@ -65,6 +67,15 @@ Connection:
                            CAP_NET_ADMIN); a name is looked up outside the mark, so
                            without --upstream the calls to the WARP API take an IP
                            address only, see --api-address
+  --tun <name>             carry the tunnel on a tun device of this name instead
+                           of socks5, so the kernel owns tcp, udp and routing: send
+                           traffic into the device and it goes through the tunnel
+                           (needs root or CAP_NET_ADMIN and /dev/net/tun; --bind,
+                           --http-proxy and --route-* belong to socks5 and are
+                           ignored, and modes that need the userspace tcp stack,
+                           like --gool, --mim and --tor-only, are refused)
+  --tun-addr <a/p,...>     give the device these addresses instead of the ones
+                           the tunnel assigned, e.g. 172.16.0.2/32
   --exit-loc <spec>        refuse a tunnel whose exit country is not wanted, checked
                            through the finished tunnel before socks5 serves and again
                            every minute after: !IR,AZ,RU blocks those, DE,SE allows
@@ -424,6 +435,8 @@ Environment variables:
   AETHER_HTTP_PROXY                --http-proxy
   AETHER_UPSTREAM                  --upstream
   AETHER_MARK                      --mark
+  AETHER_TUN                       --tun
+  AETHER_TUN_ADDR                  --tun-addr
   AETHER_STATS                     --stats
   AETHER_STATS_SECS                --stats-secs
   AETHER_EXIT_LOC                  --exit-loc
@@ -640,6 +653,8 @@ pub fn parse_args(args: Vec<String>) -> crate::error::Result<Parsed> {
             "--psiphon-bin" => set("AETHER_PSIPHON_BIN", next_value!()),
             "--psiphon-server-entries" => set("AETHER_PSIPHON_SERVER_ENTRIES", next_value!()),
             "--mark" => set("AETHER_MARK", next_value!()),
+            "--tun" => set("AETHER_TUN", next_value!()),
+            "--tun-addr" => set("AETHER_TUN_ADDR", next_value!()),
             "--exit-loc" => set("AETHER_EXIT_LOC", next_value!()),
             "--exit-loc-secs" => set("AETHER_EXIT_LOC_SECS", next_value!()),
             "--stats" => set("AETHER_STATS", "1"),
@@ -770,7 +785,36 @@ pub fn parse_args(args: Vec<String>) -> crate::error::Result<Parsed> {
         i += 1;
     }
 
+    check_tun_conflicts()?;
+
     Ok(Parsed::Run)
+}
+
+/// A tun replaces socks5, so whatever can only be served through socks5 is
+/// refused here rather than after an identity has been provisioned.
+fn check_tun_conflicts() -> crate::error::Result<()> {
+    if crate::settings::var("AETHER_TUN").is_err() {
+        return Ok(());
+    }
+
+    for (key, flag, value) in [
+        ("AETHER_TOR", "--tor-only", "only"),
+        ("AETHER_PSIPHON", "--psiphon-only", "only"),
+        ("AETHER_PROTOCOL", "--gool", "gool"),
+        ("AETHER_PROTOCOL", "--mim", "mim"),
+        ("AETHER_TEAM", "--team", "team"),
+        ("AETHER_GATEWAY", "--gateway", "1"),
+    ] {
+        if crate::settings::var(key).as_deref() == Ok(value) {
+            return Err(CliError::TunNeedsStack(flag.to_string()).into());
+        }
+    }
+
+    if crate::settings::var("AETHER_EXIT_LOC").is_ok() {
+        return Err(CliError::TunNeedsStack("--exit-loc".to_string()).into());
+    }
+
+    Ok(())
 }
 
 fn set(key: &str, value: &str) {

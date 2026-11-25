@@ -4,15 +4,14 @@ use std::time::Instant;
 
 use super::{
     count_tunnel_end, exit_policy_guard, masque_tunnel_mtu, noize_config, noize_profile,
-    parse_local_v4, scan_settings_from_env, team_endpoint, Listeners, TunnelError, TunnelExit,
+    packet_wire, parse_local_v4, scan_settings_from_env, team_endpoint, Frontend, TunnelError,
+    TunnelExit, Wire,
 };
 use crate::error::{AetherError, Result};
 use crate::modes::gool::run_gool_tunnel;
 use crate::prompt::{select_ip_version, select_scan_mode_str, want_quick_reconnect};
 use crate::relay::TaskGuard;
-use crate::{
-    account, consts, dns, exitloc, lastconn, masque_h2, netstack, noize, prober, quic, tls,
-};
+use crate::{account, consts, dns, exitloc, lastconn, masque_h2, noize, prober, quic, tls};
 
 pub(crate) async fn resolve_ech() -> Result<Option<Vec<u8>>> {
     let setting = crate::settings::var(tls::SESSION_ECH_OPTION.variable).ok();
@@ -150,11 +149,15 @@ fn pinned_peer() -> Option<String> {
 
 pub(crate) async fn run_masque(
     identity: account::Identity,
-    listeners: Listeners,
+    frontend: Frontend,
     lastconn_path: String,
     gool_inner: Option<String>,
 ) -> Result<()> {
     let forced = pinned_peer();
+
+    if let Some(tun) = frontend.tun() {
+        tun.configure(&identity.ipv4, &identity.ipv6, masque_tunnel_mtu())?;
+    }
 
     let mut quick_peer: Option<SocketAddr> = None;
 
@@ -289,7 +292,7 @@ pub(crate) async fn run_masque(
         let started = Instant::now();
         let ended = match &gool_inner {
             Some(path) => {
-                run_gool_tunnel(&identity, peer, tls::session_ech(), &listeners, path).await
+                run_gool_tunnel(&identity, peer, tls::session_ech(), &frontend, path).await
             }
             None => {
                 run_masque_tunnel(
@@ -297,7 +300,7 @@ pub(crate) async fn run_masque(
                     peer,
                     tls::session_ech(),
                     noize_config(),
-                    &listeners,
+                    &frontend,
                 )
                 .await
             }
@@ -352,7 +355,7 @@ impl GatewayStrikes {
 }
 
 pub(crate) struct MasqueHop {
-    pub(crate) stack: netstack::StackHandle,
+    pub(crate) wire: Wire,
     pub(crate) exit: TunnelExit,
     _ctrl: tokio::sync::mpsc::Sender<quic::Control>,
     _guard: TaskGuard,
@@ -373,6 +376,7 @@ pub(crate) struct Hop<'a> {
 pub(crate) async fn establish_masque(
     identity: &account::Identity,
     hop: Hop<'_>,
+    tun: Option<&std::sync::Arc<crate::tun::Tun>>,
 ) -> Result<MasqueHop> {
     let Hop {
         peer,
@@ -393,17 +397,35 @@ pub(crate) async fn establish_masque(
         ctrl_tx,
     } = chans;
 
-    let stack = netstack::spawn(&identity.ipv4, &identity.ipv6, mtu, inbound_rx, outbound_tx)?;
+    let wire = packet_wire(
+        tun,
+        &identity.ipv4,
+        &identity.ipv6,
+        mtu,
+        inbound_rx,
+        outbound_tx,
+    )?;
 
     let mut guard = TaskGuard::new();
 
+    // The edge assigns our address after the handshake; a stack has to be told,
+    // while a tun was given one up front and the kernel keeps it.
     let (addr_tx, mut addr_rx) = tokio::sync::mpsc::channel::<quic::AssignedAddr>(8);
-    let bridge_stack = stack.clone();
+    let bridge_stack = wire.stack().cloned();
+    let bridge_label = label.to_string();
     let bridge_task = tokio::spawn(async move {
         while let Some(a) = addr_rx.recv().await {
+            let Some(stack) = &bridge_stack else {
+                log::info!(
+                    "[+] [{bridge_label}] the edge assigned {}/{}",
+                    a.ip,
+                    a.prefix
+                );
+                continue;
+            };
             let res = match a.ip {
-                IpAddr::V4(v4) => bridge_stack.set_addrs(Some((v4, a.prefix)), None).await,
-                IpAddr::V6(v6) => bridge_stack.set_addrs(None, Some((v6, a.prefix))).await,
+                IpAddr::V4(v4) => stack.set_addrs(Some((v4, a.prefix)), None).await,
+                IpAddr::V6(v6) => stack.set_addrs(None, Some((v6, a.prefix))).await,
             };
             if let Err(e) = res {
                 log::warn!("[-] failed to sync edge address into netstack: {e}");
@@ -488,7 +510,7 @@ pub(crate) async fn establish_masque(
     }
 
     Ok(MasqueHop {
-        stack,
+        wire,
         exit: tunnel_task,
         _ctrl: ctrl_tx,
         _guard: guard,
@@ -500,10 +522,11 @@ pub(crate) async fn run_masque_tunnel(
     peer: SocketAddr,
     ech: Option<Vec<u8>>,
     noize: noize::NoizeConfig,
-    listeners: &Listeners,
+    frontend: &Frontend,
 ) -> Result<()> {
     let h2 = masque_h2::enabled();
     let dial = if h2 { masque_h2::h2_peer(peer) } else { peer };
+    let tun = frontend.tun();
 
     let mut hop = establish_masque(
         identity,
@@ -518,16 +541,20 @@ pub(crate) async fn run_masque_tunnel(
             startup: masque_startup_timeout(),
             label: "masque",
         },
+        tun.as_ref(),
     )
     .await?;
 
     let policy = exitloc::Policy::from_env();
-    exitloc::settle(&hop.stack, &policy, "masque").await?;
+    let stack = hop.wire.stack().cloned();
+    if let Some(stack) = &stack {
+        exitloc::settle(stack, &policy, "masque").await?;
+    }
 
     let tunnel_result = tokio::select! {
         result = &mut hop.exit => result,
-        reason = exit_policy_guard(&hop.stack, &policy) => return Err(reason),
-        never = listeners.serve(&hop.stack) => match never {},
+        reason = exit_policy_guard(stack.as_ref(), &policy) => return Err(reason),
+        reason = hop.wire.serve(frontend) => return Err(reason),
     };
 
     match tunnel_result {
@@ -756,6 +783,7 @@ mod tests {
                                     startup,
                                     label: "test",
                                 },
+                                None,
                             );
                             let _ = hop.await;
                         } else {
@@ -871,6 +899,7 @@ mod tests {
                     startup,
                     label: "test",
                 },
+                None,
             );
             let _ = hop.await;
         } else {

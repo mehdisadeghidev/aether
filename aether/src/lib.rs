@@ -33,6 +33,7 @@ pub mod stats;
 pub mod sysprofile;
 pub mod tls;
 pub mod tor;
+pub mod tun;
 pub mod tunnelping;
 pub mod upstream;
 pub mod wg_prober;
@@ -50,7 +51,7 @@ use crate::modes::gool::{gool_classic, run_gool};
 use crate::modes::masque::{resolve_ech, run_masque};
 use crate::modes::mim::run_mim;
 use crate::modes::wireguard::run_wireguard;
-use crate::modes::{install_netstack_panic_guard, Listeners};
+use crate::modes::{install_netstack_panic_guard, Frontend};
 use crate::prompt::{
     needs_udp_to_warp, protocol_without_asking, select_masque_transport, select_protocol, Protocol,
 };
@@ -118,16 +119,16 @@ pub async fn run_with(args: Vec<String>) -> Result<()> {
     };
 
     let (core_end, core_ended) = tokio::sync::mpsc::unbounded_channel::<AetherError>();
-    let listeners = Listeners::bind(listen, core_end.clone()).await?;
+    let frontend = Frontend::bind(listen, core_end.clone()).await?;
 
     if tor::mode() == tor::Mode::Only {
         let state = tor::state_dir(&base_config);
-        return tor::run_only(listeners.into_socks(), listen, state).await;
+        return tor::run_only(frontend.into_socks()?, listen, state).await;
     }
 
     if psiphon::mode() == psiphon::Mode::Only {
         let state = psiphon::state_dir(&base_config);
-        return psiphon::run_only(listeners.into_socks(), listen, state).await;
+        return psiphon::run_only(frontend.into_socks()?, listen, state).await;
     }
 
     if tor::mode() == tor::Mode::Reverse && psiphon::mode() == psiphon::Mode::Reverse {
@@ -144,16 +145,6 @@ pub async fn run_with(args: Vec<String>) -> Result<()> {
             None => select_protocol(&base_config).await,
         };
 
-    if tor::mode() == tor::Mode::Only {
-        let state = tor::state_dir(&base_config);
-        return tor::run_only(listeners.into_socks(), listen, state).await;
-    }
-
-    if psiphon::mode() == psiphon::Mode::Only {
-        let state = psiphon::state_dir(&base_config);
-        return psiphon::run_only(listeners.into_socks(), listen, state).await;
-    }
-
     if protocol != Protocol::WarpInWarp && !pinned_wiw.is_empty() {
         log::warn!(
             "[-] the warp-in-warp endpoints you set are ignored on {}; they only apply to --gool",
@@ -169,7 +160,10 @@ pub async fn run_with(args: Vec<String>) -> Result<()> {
     }
 
     let mut tor_and_psiphon = TaskGuard::new();
-    let held = crate::socks::dialable(listeners.socks.local_addr().unwrap_or(listen));
+    let held = frontend
+        .socks_addr()
+        .map(crate::socks::dialable)
+        .unwrap_or(listen);
     match tor::mode() {
         tor::Mode::Chain => {
             let through = held;
@@ -255,7 +249,7 @@ pub async fn run_with(args: Vec<String>) -> Result<()> {
                 );
                 let _ech = tls::EchSession::start(resolve_ech().await?);
                 let lastconn_path = lastconn_path(&config_path);
-                run_masque(identity, listeners, lastconn_path, None).await
+                run_masque(identity, frontend, lastconn_path, None).await
             }
             Protocol::WireGuard => {
                 let config_path = warp_config_path(&base_config);
@@ -268,7 +262,7 @@ pub async fn run_with(args: Vec<String>) -> Result<()> {
                 );
 
                 let lastconn_path = lastconn_path(&config_path);
-                run_wireguard(identity, listeners, lastconn_path).await
+                run_wireguard(identity, frontend, lastconn_path).await
             }
             Protocol::WarpInWarp if !gool_classic() => {
                 select_masque_transport().await;
@@ -281,7 +275,7 @@ pub async fn run_with(args: Vec<String>) -> Result<()> {
                 );
                 let _ech = tls::EchSession::start(resolve_ech().await?);
                 let lastconn_path = lastconn_path(&config_path);
-                run_masque(identity, listeners, lastconn_path, Some(inner_path)).await
+                run_masque(identity, frontend, lastconn_path, Some(inner_path)).await
             }
             Protocol::WarpInWarp => {
                 let primary_path = warp_config_path(&base_config);
@@ -295,7 +289,7 @@ pub async fn run_with(args: Vec<String>) -> Result<()> {
                     secondary.device_id,
                     secondary.ipv4
                 );
-                run_gool(primary, secondary, listeners).await
+                run_gool(primary, secondary, frontend.into_listeners()?).await
             }
             Protocol::MasqueInMasque => {
                 select_masque_transport().await;
@@ -311,7 +305,7 @@ pub async fn run_with(args: Vec<String>) -> Result<()> {
                     secondary.ipv4
                 );
                 let _ech = tls::EchSession::start(resolve_ech().await?);
-                run_mim(primary, secondary, listeners).await
+                run_mim(primary, secondary, frontend.into_listeners()?).await
             }
         }
     };

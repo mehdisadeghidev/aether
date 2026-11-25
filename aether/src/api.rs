@@ -571,7 +571,8 @@ pub async fn connect(
     // so the next tunnel can bind them as soon as this call returns. One that breaks ends it.
     let attempt = async {
         let (broken, mut breaks) = tokio::sync::mpsc::unbounded_channel();
-        let listeners = crate::modes::Listeners::bind(spec.socks, broken).await?;
+        let frontend =
+            crate::modes::Frontend::Socks(crate::modes::Listeners::bind(spec.socks, broken).await?);
         let tunnel = async {
             match spec.transport {
                 Transport::Masque => {
@@ -580,7 +581,7 @@ pub async fn connect(
                         peer,
                         spec.ech.clone(),
                         spec.noize.clone(),
-                        &listeners,
+                        &frontend,
                     )
                     .await
                 }
@@ -590,7 +591,7 @@ pub async fn connect(
                         peer,
                         spec.aethernoize.clone(),
                         spec.keepalive,
-                        &listeners,
+                        &frontend,
                     )
                     .await
                 }

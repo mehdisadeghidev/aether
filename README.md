@@ -197,8 +197,7 @@ With `--tor` the usual proxy on `127.0.0.1:1819` keeps the WARP exit and a secon
 ```text
 aether/         the crate
 quiche/         vendored QUIC/HTTP-3 library, a path dependency
-scripts/        build helpers: pluggable transports, psiphon, license notices, h2 benchmark
-license-texts/  license texts the notice generator copies
+scripts/        build helpers: pluggable transports, psiphon, h2 benchmark
 Dockerfile      the released image
 ```
 

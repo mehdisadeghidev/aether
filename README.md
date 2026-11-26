@@ -1,9 +1,5 @@
 # Aether
 
-<a href="https://trendshift.io/repositories/112657" target="_blank"><img src="https://trendshift.io/api/badge/repositories/112657" alt="CluvexStudio%2FAether | Trendshift" style="width: 250px; height: 55px;" width="250" height="55"/></a>
-
-Telegram: https://t.me/CluvexStudio
-
 Aether is a censorship circumvention client designed for heavily restricted networks. It automatically discovers reachable routes, establishes an encrypted tunnel, and exposes a local SOCKS5 proxy for your applications.
 
 Unlike traditional VPN clients, Aether is built for environments where Deep Packet Inspection (DPI), protocol fingerprinting, UDP throttling, and endpoint blocking are common.
@@ -188,25 +184,11 @@ scripts/        build helpers: pluggable transports, psiphon, h2 benchmark
 Dockerfile      the released image
 ```
 
-## Credits
-
-Developed by **CluvexStudio**. :))
-
-MASQUE support is built on top of Cloudflare's **Quiche** library.
-
 ## Contributing
 
 > **Experienced network developers and protocol engineers are welcome to contribute.**
 
 > **Please keep the codebase clean, maintainable, and well-engineered. Low-quality or vibe-coded contributions will not be accepted.**
-
-## Donate
-
-If Aether has been useful to you, consider supporting its development:
-
-- **TRX (Tron):** `TRxVSHcoADZnBfztFmFb2TQopusAwWYEVR`
-- **BTC:** `bc1qnjnvzsa5avgj7n0uy383cv5zdxfjnvvp257egm`
-- **TON:** `UQAH75bXaaRUhZMwiF0ZujOXFDDmvLSPASKoOsWF0HNasiaM`
 
 ## License
 

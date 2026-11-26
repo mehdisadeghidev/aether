@@ -100,7 +100,7 @@ unsafe fn read_str(raw: *const c_char) -> std::result::Result<String, String> {
     if raw.is_null() {
         return Err("a required argument was null".to_string());
     }
-    CStr::from_ptr(raw)
+    unsafe { CStr::from_ptr(raw) }
         .to_str()
         .map(|value| value.to_string())
         .map_err(|_| "an argument was not valid utf-8".to_string())
@@ -109,7 +109,7 @@ unsafe fn read_str(raw: *const c_char) -> std::result::Result<String, String> {
 unsafe fn read_json<T: serde::de::DeserializeOwned>(
     raw: *const c_char,
 ) -> std::result::Result<T, String> {
-    let text = read_str(raw)?;
+    let text = unsafe { read_str(raw) }?;
     serde_json::from_str(&text).map_err(|e| format!("the payload is not usable json: {e}"))
 }
 

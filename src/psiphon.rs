@@ -3,8 +3,8 @@ use std::path::{Path, PathBuf};
 use std::process::Stdio;
 use std::time::Duration;
 
-use base64::engine::general_purpose::STANDARD as BASE64;
 use base64::Engine;
+use base64::engine::general_purpose::STANDARD as BASE64;
 use serde::Deserialize;
 use tokio::io::{AsyncBufReadExt, BufReader};
 use tokio::process::{Child, Command};
@@ -112,11 +112,7 @@ fn ready_timeout() -> Duration {
 }
 
 fn exe_suffix() -> &'static str {
-    if cfg!(windows) {
-        ".exe"
-    } else {
-        ""
-    }
+    if cfg!(windows) { ".exe" } else { "" }
 }
 
 fn search_dirs() -> Vec<PathBuf> {

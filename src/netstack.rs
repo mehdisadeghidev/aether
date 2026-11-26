@@ -445,19 +445,11 @@ fn parse_v6(s: &str) -> Result<Option<(Ipv6Addr, u8)>> {
 }
 
 fn routable_prefix_v4(p: u8) -> u8 {
-    if p >= 31 {
-        24
-    } else {
-        p
-    }
+    if p >= 31 { 24 } else { p }
 }
 
 fn routable_prefix_v6(p: u8) -> u8 {
-    if p >= 127 {
-        64
-    } else {
-        p
-    }
+    if p >= 127 { 64 } else { p }
 }
 
 fn apply_addrs(iface: &mut Interface, v4: Option<(Ipv4Addr, u8)>, v6: Option<(Ipv6Addr, u8)>) {

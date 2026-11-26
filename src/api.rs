@@ -750,8 +750,7 @@ mod tests {
     }
 
     /// Cloudflare's key of cloudflare-ech.com on 2026-10-01.
-    const CLOUDFLARE_ECH: &str =
-        "AEX+DQBBrwAgACCbK1mYDYFz/BAn6S5t+Q/v+Oej3eFNxtPWgz50fNnFPAAEAAEAAQASY2xvdWRmbGFyZS1lY2guY29tAAA=";
+    const CLOUDFLARE_ECH: &str = "AEX+DQBBrwAgACCbK1mYDYFz/BAn6S5t+Q/v+Oej3eFNxtPWgz50fNnFPAAEAAEAAQASY2xvdWRmbGFyZS1lY2guY29tAAA=";
 
     /// An ECHConfigList BoringSSL takes and offers nothing from: its one config is of another
     /// version.

@@ -12,7 +12,7 @@ use tokio::net::TcpStream;
 
 use crate::error::{AetherError, Result};
 use crate::fragment::{FragmentConfig, FragmentingStream};
-use crate::tls::{Fingerprint, ALPN_H2_HTTP1};
+use crate::tls::{ALPN_H2_HTTP1, Fingerprint};
 
 /// The most of an answer that is read.
 const MAX_BODY: usize = 512 * 1024;
@@ -415,7 +415,7 @@ impl Http1Answer {
                 return Err(AetherError::Api(format!(
                     "the answer ended after {} of its {length} bytes",
                     body.len()
-                )))
+                )));
             }
             Framing::Length(length) => body[..length].to_vec(),
             Framing::Chunked(dechunker) => dechunker.finish()?,
@@ -816,9 +816,11 @@ mod tests {
             headers: &headers,
             body: None,
         };
-        assert!(send(&request, fingerprint, ech, Duration::from_secs(10))
-            .await
-            .is_err());
+        assert!(
+            send(&request, fingerprint, ech, Duration::from_secs(10))
+                .await
+                .is_err()
+        );
         hello.await.expect("the ClientHello")
     }
 
@@ -870,8 +872,7 @@ mod tests {
     }
 
     /// Cloudflare's key of cloudflare-ech.com on 2026-10-01.
-    const CLOUDFLARE_ECH: &str =
-        "AEX+DQBBrwAgACCbK1mYDYFz/BAn6S5t+Q/v+Oej3eFNxtPWgz50fNnFPAAEAAEAAQASY2xvdWRmbGFyZS1lY2guY29tAAA=";
+    const CLOUDFLARE_ECH: &str = "AEX+DQBBrwAgACCbK1mYDYFz/BAn6S5t+Q/v+Oej3eFNxtPWgz50fNnFPAAEAAEAAQASY2xvdWRmbGFyZS1lY2guY29tAAA=";
 
     #[tokio::test]
     async fn with_an_ech_key_the_name_goes_inside_the_encrypted_client_hello() {

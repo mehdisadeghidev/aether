@@ -5,9 +5,9 @@ use base64::Engine;
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::net::{TcpStream, UdpSocket};
 
+use crate::Result;
 use crate::error::AetherError;
 use crate::socks::{ATYP_DOMAIN, ATYP_V4, ATYP_V6, CMD_CONNECT, CMD_UDP_ASSOCIATE, REP_OK, VER};
-use crate::Result;
 
 #[derive(Debug, thiserror::Error)]
 pub enum UpstreamError {
@@ -237,7 +237,7 @@ impl Upstream {
             other => {
                 return Err(AetherError::from(UpstreamError::UnknownKind(
                     other.to_string(),
-                )))
+                )));
             }
         };
 

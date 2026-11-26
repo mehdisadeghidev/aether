@@ -1,13 +1,13 @@
 use std::borrow::Borrow;
 use std::future::Future;
 use std::net::{IpAddr, Ipv4Addr, Ipv6Addr, SocketAddr};
-use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::Arc;
+use std::sync::atomic::{AtomicU64, Ordering};
 use std::time::Duration;
 
 use tokio::io::{AsyncRead, AsyncReadExt, AsyncWrite, AsyncWriteExt};
 use tokio::net::{TcpListener, TcpStream, UdpSocket};
-use tokio::sync::{mpsc, Semaphore};
+use tokio::sync::{Semaphore, mpsc};
 
 use crate::error::{AetherError, Result};
 
@@ -2892,7 +2892,7 @@ async fn open_tunneled(stack: &StackHandle, target: Target, port: u16) -> Result
         match open_through_gateway(stack, proxy, &authority, port).await {
             Ok(conn) => return Ok(conn),
             Err(refused @ AetherError::Socks(SocksError::GatewayRefused { .. })) => {
-                return Err(refused)
+                return Err(refused);
             }
             Err(e) => retire_gateway(&e.to_string()),
         }

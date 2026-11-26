@@ -6,7 +6,7 @@ use std::time::{Duration, Instant};
 use boringtun::noise::{Tunn, TunnResult};
 use boringtun::x25519::{PublicKey, StaticSecret};
 use tokio::net::UdpSocket;
-use tokio::sync::{mpsc, Mutex};
+use tokio::sync::{Mutex, mpsc};
 
 use crate::aethernoize::{self, AetherNoizeConfig};
 use crate::error::{AetherError, Result};

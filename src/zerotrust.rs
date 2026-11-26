@@ -652,7 +652,7 @@ async fn prompt_login_code(email: &str, attempt: u32) -> Result<String> {
                 return Err(AetherError::Api(format!(
                     "no login code arrived within {}s; request a fresh code and try again",
                     CODE_WAIT.as_secs()
-                )))
+                )));
             }
         },
     };

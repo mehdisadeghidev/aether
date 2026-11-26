@@ -9,7 +9,9 @@ pub enum TorError {
     NotBuiltIn,
     #[error("tor cannot dial through {tunnel}: {reason}")]
     Tunnel { tunnel: SocketAddr, reason: String },
-    #[error("tor cannot dial through the upstream proxy at {0}: it takes a socks5 address, with a password only on this machine")]
+    #[error(
+        "tor cannot dial through the upstream proxy at {0}: it takes a socks5 address, with a password only on this machine"
+    )]
     UpstreamProxy(String),
     #[error("none of the bridges could be read by tor")]
     NoReadableBridges,
@@ -39,7 +41,9 @@ pub enum TorError {
     NoAnswer(u64),
     #[error("the bridges you gave need a pluggable transport that is not installed; {0}")]
     TransportMissing(&'static str),
-    #[error("tor is blocked on this network and no pluggable transport is installed, so no bridge can be used; {0}")]
+    #[error(
+        "tor is blocked on this network and no pluggable transport is installed, so no bridge can be used; {0}"
+    )]
     BlockedWithoutTransport(&'static str),
 }
 

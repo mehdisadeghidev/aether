@@ -88,11 +88,7 @@ fn parse_range(spec: &str, default: (u64, u64)) -> (u64, u64) {
         Some((a, b)) => {
             let lo = a.trim().parse().unwrap_or(default.0);
             let hi = b.trim().parse().unwrap_or(default.1);
-            if hi < lo {
-                (hi, lo)
-            } else {
-                (lo, hi)
-            }
+            if hi < lo { (hi, lo) } else { (lo, hi) }
         }
         None => {
             let v = spec.parse().unwrap_or(default.0);

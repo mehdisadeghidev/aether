@@ -524,11 +524,7 @@ async fn from_builtin(client: &reqwest::Client) -> Option<Vec<String>> {
         .ok()?;
 
     let lines = ordered(grouped);
-    if lines.is_empty() {
-        None
-    } else {
-        Some(lines)
-    }
+    if lines.is_empty() { None } else { Some(lines) }
 }
 
 fn now() -> u64 {

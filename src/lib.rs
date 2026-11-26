@@ -43,7 +43,7 @@ pub mod zerotrust;
 use std::net::SocketAddr;
 
 use crate::carrier::{
-    carrier_upstream, until_core_end, watch_chain, CARRYING_THE_TUNNEL, INSIDE_THE_TUNNEL,
+    CARRYING_THE_TUNNEL, INSIDE_THE_TUNNEL, carrier_upstream, until_core_end, watch_chain,
 };
 use crate::error::{AetherError, Result};
 use crate::modes::endpoints::{mim_endpoints_from_env, wiw_endpoints_from_env};
@@ -51,9 +51,9 @@ use crate::modes::gool::{gool_classic, run_gool};
 use crate::modes::masque::{resolve_ech, run_masque};
 use crate::modes::mim::run_mim;
 use crate::modes::wireguard::run_wireguard;
-use crate::modes::{install_netstack_panic_guard, Frontend};
+use crate::modes::{Frontend, install_netstack_panic_guard};
 use crate::prompt::{
-    needs_udp_to_warp, protocol_without_asking, select_masque_transport, select_protocol, Protocol,
+    Protocol, needs_udp_to_warp, protocol_without_asking, select_masque_transport, select_protocol,
 };
 use crate::provision::{
     derive_sibling_path, gool_identity_path, lastconn_path, load_or_provision_masque,

@@ -659,7 +659,7 @@ fn build_config(
             if named {
                 log::warn!(
                     "[-] psiphon listens on loopback behind aether's own listener here, so the \
-                     interface AETHER_PSIPHON_INTERFACE or --psiphon-config names is not used; give \
+                     interface --psiphon-interface or --psiphon-config names is not used; give \
                      the address to listen on with --bind (--psiphon-only) or --psiphon-bind"
                 );
             }

@@ -10,6 +10,10 @@ pub fn var(key: impl AsRef<str>) -> Result<String, VarError> {
     match set.get(key) {
         Some(Some(value)) => Ok(value.clone()),
         Some(None) => Err(VarError::NotPresent),
+        // Aether's own settings come from the command line alone. The environment is
+        // left to the lookups that are about the system, not about aether: PATH, and
+        // whatever a plugin or a library reads for itself.
+        None if key.starts_with("AETHER_") => Err(VarError::NotPresent),
         None => std::env::var(key),
     }
 }
@@ -59,7 +63,7 @@ mod tests {
     use super::*;
 
     #[test]
-    fn a_setting_shadows_the_environment_and_a_removal_hides_it() {
+    fn a_setting_is_read_back_and_a_removal_hides_it() {
         let key = "AETHER_SETTINGS_TEST_ONLY";
         assert_eq!(var(key), Err(VarError::NotPresent));
 
@@ -90,7 +94,16 @@ mod tests {
     }
 
     #[test]
-    fn an_untouched_key_is_read_from_the_environment() {
+    fn an_aether_setting_is_never_read_from_the_environment() {
+        // The environment cannot be written here, so this holds what the rule is:
+        // nothing under aether's prefix comes out of it.
+        for key in ["AETHER_PROTOCOL", "AETHER_SOCKS", "AETHER_TOR"] {
+            assert_eq!(var(key), Err(VarError::NotPresent), "{key}");
+        }
+    }
+
+    #[test]
+    fn a_key_of_the_system_is_still_read_from_the_environment() {
         let path = std::env::var("PATH");
         assert_eq!(var("PATH"), path);
     }

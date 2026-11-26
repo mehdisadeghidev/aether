@@ -387,7 +387,7 @@ pub fn discover_transports() -> Vec<Transport> {
 pub fn install_hint() -> &'static str {
     if cfg!(target_os = "windows") {
         "tor browser ships all of them and aether finds them there on its own; otherwise set \
-         AETHER_TOR_PT_DIR to the folder holding lyrebird.exe and snowflake-client.exe"
+         --tor-pt-dir to the folder holding lyrebird.exe and snowflake-client.exe"
     } else if cfg!(target_os = "macos") {
         "install one with `brew install lyrebird`, or install tor browser, which ships all of \
          them where aether looks"

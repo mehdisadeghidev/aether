@@ -394,8 +394,8 @@ async fn sign_in(settings: &TeamSettings) -> Result<String> {
 
     Err(AetherError::Api(format!(
         "team {} needs a way to sign in. pick one: a service token via \
-         AETHER_ACCESS_CLIENT_ID and AETHER_ACCESS_CLIENT_SECRET, an email one-time code via \
-         AETHER_ACCESS_EMAIL, or a token you already hold via AETHER_ACCESS_TOKEN \
+         --access-id and --access-secret, an email one-time code via \
+         --access-email, or a token you already hold via --access-token \
          (sign in at {})",
         settings.team,
         settings.login_url()

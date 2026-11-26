@@ -1024,7 +1024,7 @@ fn warn_unpinned(key: &[u8; 32]) {
     static WARNED: std::sync::OnceLock<()> = std::sync::OnceLock::new();
     if WARNED.set(()).is_ok() {
         log::warn!(
-            "[-] tls pin: the gateway's key {} is none of the keys aether pins; if Cloudflare has changed its key, AETHER_TLS_VERIFY=0 turns the check off until a release carries the new one",
+            "[-] tls pin: the gateway's key {} is none of the keys aether pins; if Cloudflare has changed its key, --no-tls-verify turns the check off until a release carries the new one",
             hex::encode(key)
         );
     } else {

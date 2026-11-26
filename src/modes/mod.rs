@@ -79,7 +79,7 @@ fn tunnel_mtu(asked: Option<usize>, h2: bool) -> usize {
     match asked.filter(|mtu| (576..=1500).contains(mtu)) {
         Some(mtu) if !h2 && mtu > H3_MAX_TUNNEL_MTU => {
             log::warn!(
-                "[-] AETHER_MASQUE_MTU {mtu} is more than one http/3 datagram carries; using {H3_MAX_TUNNEL_MTU}"
+                "[-] --mtu {mtu} is more than one http/3 datagram carries; using {H3_MAX_TUNNEL_MTU}"
             );
             H3_MAX_TUNNEL_MTU
         }

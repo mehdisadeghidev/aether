@@ -3,8 +3,12 @@ name = "aether"
 version = "2.4.0"
 edition = "2024"
 rust-version = "1.91"
+description = "Censorship circumvention client: finds a reachable WARP route and exposes a local SOCKS5 proxy or tun device"
 license = "AGPL-3.0-only"
 repository = "https://github.com/mehdisadeghidev/aether"
+readme = "README.md"
+keywords = ["vpn", "proxy", "wireguard", "masque", "censorship"]
+categories = ["command-line-utilities", "network-programming"]
 
 [lib]
 name = "aether"

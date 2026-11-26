@@ -52,10 +52,10 @@ docker run -d --name aether --restart always \
   --device /dev/net/tun \
   -v aether-data:/data \
   ghcr.io/mehdisadeghidev/aether:latest \
-  --tun tun0 --mark 0xff --masque --h2 --stats
+  --tun tun0 --fwmark 0xff --masque --h2 --stats
 ```
 
-Traffic that the kernel routes into `tun0` then goes through the tunnel, UDP and DNS included. On a router, mark the tunnel's own sockets with `--mark 0xff` and let that mark reach the internet directly, or the tunnel dials itself:
+Traffic that the kernel routes into `tun0` then goes through the tunnel, UDP and DNS included. On a router, mark the tunnel's own sockets with `--fwmark 0xff` and let that mark reach the internet directly, or the tunnel dials itself:
 
 ```bash
 ip rule add fwmark 255 lookup main pref 100
@@ -67,7 +67,7 @@ nft add chain ip aether post '{ type nat hook postrouting priority 100 ; }'
 nft add rule ip aether post oifname "tun0" masquerade
 ```
 
-The masquerade keeps the source address one WARP assigned; without it the handshake succeeds and no data ever comes back. `--tun` replaces the SOCKS front end, so `--bind`, `--http-proxy` and `--routes` are ignored, and modes that need the userspace TCP stack it provides (`--gool`, `--mim`, `--tor-only`, `--psiphon-only`, `--team`, `--gateway`, `--exit-loc`) are refused at startup.
+The masquerade keeps the source address one WARP assigned; without it the handshake succeeds and no data ever comes back. `--tun` replaces the SOCKS front end, so `--bind`, `--http-proxy` and `--routes` are ignored, and modes that need the userspace TCP stack it provides (`--gool`, `--mim`, `--tor-only`, `--psiphon-only`, `--team`, `--gateway`, `--exit-country`) are refused at startup.
 
 ### Build the image yourself
 
@@ -151,7 +151,7 @@ A WireGuard tunnel carried inside a MASQUE tunnel. Your network sees only the MA
 
 The older gool: a WireGuard tunnel running inside another WireGuard tunnel, providing an additional encryption layer.
 
-Its two hops are found by the scan by default. If you already know addresses that work on your network, name them instead with `--wiw-outer 162.159.192.1:2408 --wiw-inner 188.114.96.1:2408`, or both at once with `--wiw-peers 162.159.192.1:2408,188.114.96.1:2408`. The port is required — which port gets through is what differs between networks, so none is assumed. Give only one and the scan finds the other.
+Its two hops are found by the scan by default. If you already know addresses that work on your network, name them instead with `--gool-outer 162.159.192.1:2408 --gool-inner 188.114.96.1:2408`, or both at once with `--gool-peers 162.159.192.1:2408,188.114.96.1:2408`. The port is required — which port gets through is what differs between networks, so none is assumed. Give only one and the scan finds the other.
 
 ## Tor
 

@@ -1,15 +1,15 @@
 #![allow(clippy::missing_safety_doc)]
 
 use std::collections::HashMap;
-use std::ffi::{c_char, CStr, CString};
+use std::ffi::{CStr, CString, c_char};
 use std::net::SocketAddr;
-use std::panic::{catch_unwind, AssertUnwindSafe};
+use std::panic::{AssertUnwindSafe, catch_unwind};
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{Arc, OnceLock};
 
 use futures::FutureExt;
 use parking_lot::Mutex;
-use serde_json::{json, Value};
+use serde_json::{Value, json};
 
 use crate::account::Identity;
 use crate::api;
@@ -666,10 +666,12 @@ mod tests {
     fn an_unknown_identity_is_reported() {
         let reply = take(aether_identity_summary(999_999));
         assert_eq!(reply["ok"], json!(false));
-        assert!(reply["error"]
-            .as_str()
-            .unwrap()
-            .contains("no identity 999999"));
+        assert!(
+            reply["error"]
+                .as_str()
+                .unwrap()
+                .contains("no identity 999999")
+        );
     }
 
     #[test]

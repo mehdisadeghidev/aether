@@ -42,9 +42,8 @@ Usage:
   aether help              show this text
 
 Run it with no options and it asks for what it needs: protocol, scan mode, IP
-version. Every question has a flag, and every flag has an environment variable
-of its own. Setting either one is what stops the question being asked, and a
-flag beats a variable.
+version. Every question has a flag, and passing it is what stops the question
+being asked. Nothing is read from the environment.
 
   aether                                   answer the questions as they come
   aether --masque --turbo -4               nothing asked, straight to work
@@ -126,8 +125,7 @@ Classic gool (WARP-in-WARP) endpoints:
   --wiw-outer <ip:port>    the outer hop, the one your network sees
   --wiw-inner <ip:port>    the inner hop, reached through the outer one
   --wiw-peers <out[,in]>   both hops in one value, or only the outer one
-  --wiw-scan               scan for both, ignoring any endpoint left in the
-                           environment
+  --wiw-scan               scan for both, ignoring any endpoint already named
 
 MASQUE-in-MASQUE endpoints:
   The outer hop is found by the scan and the inner one is picked for you, both
@@ -137,7 +135,7 @@ MASQUE-in-MASQUE endpoints:
   --mim-inner <ip:port>    the inner hop, reached through the outer one
   --mim-peers <out[,in]>   both hops in one value, or only the outer one
   --mim-scan               find the outer hop by scanning, ignoring any endpoint
-                           left in the environment
+                           already named
 
 Scan mode:
   --scan <mode>            turbo | balanced | thorough | verified | ironclad
@@ -177,6 +175,13 @@ MASQUE transport:
                            in cloudflareclient.com, as Iran's does)
   --fragment-size <n|a-b>  fragment chunk size in bytes (default 8-16)
   --fragment-delay <n|a-b> delay between fragments in ms (default 2-10)
+  --fragment-sni           split the server name itself across two fragments
+                           (off by default)
+  --mtu <n>                the tunnel's MTU, 576 to 1500 (default 1280, or the
+                           most an http/3 datagram carries)
+  --h2-keepalive-secs <n>  HTTP/2 keepalive interval (default 15)
+  --h2-keepalive-timeout-secs <n>
+                           how long a keepalive may go unanswered (default 20)
 
 TLS:
   the TLS handshakes of the tunnel and its setup, MASQUE over HTTP/2 and HTTP/3,
@@ -191,8 +196,8 @@ TLS:
                            cloudflareaccess.com. With --ech it is the name
                            inside the encrypted ClientHello
   --tls-verify             hold the certificate of the MASQUE gateway to the
-                           pins aether carries (on by default with --team;
-                           AETHER_TLS_VERIFY=0 turns it off)
+                           pins aether carries (on by default with --team)
+  --no-tls-verify          do not, even with --team
   --ech <auto|base64>      enable Encrypted Client Hello on the MASQUE handshakes
                            and the calls to the WARP API, with the key looked up
                            (auto) or given in base64; without a key it can
@@ -261,6 +266,12 @@ TLS:
 WireGuard:
   --keepalive <n>          persistent keepalive interval in seconds (default 5)
   --no-profile-retry       don't retry other obfuscation profiles during scan
+  --stale-secs <n>         silence on a wireguard tunnel before it counts as
+                           dead (default 10)
+  --endpoint-cooldown-secs <n>
+                           how long an endpoint is left out of rescans once its
+                           tunnel ended twice in a row, each time within five
+                           minutes of starting (default 300)
 
 Tor:
   Three ways to use tor, all needing a build made with the tor feature:
@@ -296,6 +307,14 @@ Tor:
                            for are always skipped
   --tor-dir <path>         where tor keeps its directory cache and state
                            (default <config>-tor beside the identity file)
+  --tor-country <cc>       ask bridgedb for bridges of this country, e.g. ir
+  --tor-check <host:port>  an address tor must reach before it counts as working
+                           (default check.torproject.org:443)
+  --tor-log <level>        how loud tor is: info, debug or trace
+  --tor-direct-secs <n>    how long to try tor plainly before bridges (default 75)
+  --tor-stall-secs <n>     give up on a bridge after this long with no headway,
+                           however far it got (default 75)
+  --tor-bridge-secs <n>    the longest any one bridge may take (default 360)
 
   --psiphon                carry psiphon inside the tunnel: aether -> warp ->
                            psiphon -> internet, served on --psiphon-bind
@@ -335,6 +354,14 @@ Tor:
                            form the remote list unpacks to, so that the first
                            connection does not depend on downloading that list;
                            a fetched list is merged on top of it
+  --psiphon-ready-secs <n> how long to wait for psiphon to tunnel (default 180)
+  --psiphon-interface <name>
+                           the interface psiphon listens on, instead of the one
+                           the bind address names
+  --psiphon-sponsor-id <id> the sponsor id psiphon presents
+  --psiphon-channel-id <id> the propagation channel id psiphon presents
+  --psiphon-server-list <url>
+                           where psiphon fetches its remote server list
 
   On a network that blocks tor, aether fetches its own bridges from bridgedb and
   finds the pluggable transports already on this machine, tor browser's included.
@@ -418,163 +445,31 @@ Config files:
 Advanced:
   --perf <low|medium|high> force a resource profile instead of auto-detecting from cpu/ram
                            (low: routers/small boards, medium: typical desktop, high: servers)
+  --max-clients <n>        proxy clients served at once; past it new ones wait for
+                           a free slot (default by resources, 512 to 8192)
+  --half-close-secs <n>    how long a connection the client has finished sending
+                           on may sit silent before it is closed (default 30)
+  --tcp-keepalive-secs <n> idle time before a keep-alive checks that the other
+                           end of a connection is still there; three unanswered
+                           ones close it (default 60)
+  --tcp-connect-secs <n>   how long a connection through the tunnel may take to
+                           open (default 30)
+  --route-sniff-ms <n>     how long to wait for the first bytes that name the
+                           server, which is what makes routing rules work behind
+                           a tun front end (default 400)
+  --no-route-sniff         stop reading the server name from those bytes
+  --ironclad-port <n>      port the ironclad scan makes its real HTTP request to
+                           (default 80)
+  --no-reprovision         stop replacing an identity Cloudflare has refused with
+                           a freshly registered one
   --log-level <level>      error | warn | info | debug | trace (default info)
                            info: connection stages, validation, reconnects, retries
                            debug: adds per-tunnel internals useful for troubleshooting
                            trace: everything, including per-packet noise
-  --verbose                shortcut for --log-level debug (RUST_LOG overrides both)
+  --verbose                shortcut for --log-level debug
 
   -v, --version            show version and exit
   -h, --help, help         show this help and exit
-
-Environment variables:
-  Every flag above has one, for scripts and services. The last few have no flag
-  of their own.
-
-  AETHER_SOCKS                     --bind
-  AETHER_HTTP_PROXY                --http-proxy
-  AETHER_UPSTREAM                  --upstream
-  AETHER_MARK                      --mark
-  AETHER_TUN                       --tun
-  AETHER_TUN_ADDR                  --tun-addr
-  AETHER_STATS                     --stats
-  AETHER_STATS_SECS                --stats-secs
-  AETHER_EXIT_LOC                  --exit-loc
-  AETHER_EXIT_LOC_SECS             --exit-loc-secs
-  AETHER_TOR                       chain for --tor, reverse, or only
-  AETHER_TOR_BRIDGES               --tor-bridge, several separated by ;
-                                   auto for --tor-bridges, off for --no-tor-bridges
-  AETHER_TOR_PT                    --tor-pt, several separated by ;
-  AETHER_TOR_PT_DIR                --tor-pt-dir, several separated by ;
-  AETHER_TOR_BIND                  --tor-bind
-  AETHER_TOR_HTTP                  --tor-http
-  AETHER_TOR_BRIDGE_FILE           --tor-bridge-file
-  AETHER_TOR_RELAYS                --tor-relays
-  AETHER_TOR_RELAY_PORTS           --tor-relay-ports
-  AETHER_PSIPHON                   --psiphon (chain), --psiphon-reverse,
-                                   --psiphon-only
-  AETHER_PSIPHON_CONFIG            --psiphon-config
-  AETHER_PSIPHON_MODE              --psiphon-mode
-  AETHER_PSIPHON_CDN_IPS           --psiphon-cdn-ips
-  AETHER_PSIPHON_CDN_SNI           --psiphon-cdn-sni
-  AETHER_PSIPHON_CDN_SETS          --psiphon-cdn-sets
-  AETHER_PSIPHON_BIND              --psiphon-bind
-  AETHER_PSIPHON_HTTP              --psiphon-http
-  AETHER_PSIPHON_REGION            --psiphon-region
-  AETHER_PSIPHON_DIR               --psiphon-dir
-  AETHER_PSIPHON_BIN               --psiphon-bin
-  AETHER_PSIPHON_SERVER_ENTRIES    --psiphon-server-entries
-  AETHER_PSIPHON_READY_SECS        how long to wait for psiphon to tunnel (180)
-  AETHER_TOR_DIR                   --tor-dir
-  AETHER_TOR_DIRECT_SECS           how long to try tor plainly before bridges (75)
-  AETHER_TOR_STALL_SECS            give up on a bridge after this long with no
-                                   headway, however far it got (75)
-  AETHER_TOR_BRIDGE_SECS           the longest any one bridge may take (360)
-  AETHER_TOR_COUNTRY               ask bridgedb for this country, e.g. ir
-  AETHER_TOR_CHECK                 host:port tor must reach before it counts as
-                                   working (check.torproject.org:443)
-  AETHER_TOR_LOG                   how loud tor is: info, debug or trace
-  AETHER_QUICK_RECONNECT           1 or 0, for --quick-reconnect
-  AETHER_IP                        --ip: v4, v6 or both
-  AETHER_PEER                      --peer
-  AETHER_WG_PEER                   --wg-peer
-  AETHER_PROTOCOL                  --protocol: masque, wg, gool or mim
-  AETHER_GOOL_INNER                --gool-peer
-  AETHER_GOOL_MODE                 classic for --gool-classic
-  AETHER_WIW_OUTER_PEER            --wiw-outer
-  AETHER_WIW_INNER_PEER            --wiw-inner
-  AETHER_WIW_PEERS                 --wiw-peers, or auto for --wiw-scan
-  AETHER_MIM_OUTER_PEER            --mim-outer
-  AETHER_MIM_INNER_PEER            --mim-inner
-  AETHER_MIM_PEERS                 --mim-peers, or auto for --mim-scan
-  AETHER_SCAN                      --scan
-  AETHER_NOIZE                     --noize
-  AETHER_MASQUE_HTTP2              --h2 (1), or --h3 (0)
-  AETHER_QUIC_V2                   0 for --no-quic-v2 (the opener is on by default)
-  AETHER_MASQUE_H2_PEER            --h2-peer
-  AETHER_MASQUE_NO_DATA_CHECK      --no-data-check, MASQUE side
-  AETHER_WG_NO_DATA_CHECK          --no-data-check, WireGuard side
-  AETHER_MASQUE_VALIDATE_SECS      --validate-secs, MASQUE side
-  AETHER_WG_VALIDATE_SECS          --validate-secs, WireGuard side
-  AETHER_MASQUE_STARTUP_SECS       --startup-secs
-  AETHER_MASQUE_RECONNECT_SECS     --reconnect-secs, MASQUE side
-  AETHER_WG_RECONNECT_SECS         --reconnect-secs, WireGuard side
-  AETHER_DNS                       --dns
-  AETHER_MASQUE_H2_FRAGMENT        --fragment (default off)
-  AETHER_MASQUE_H2_FRAGMENT_SIZE   --fragment-size
-  AETHER_MASQUE_H2_FRAGMENT_DELAY  --fragment-delay
-  AETHER_MASQUE_SNI                --masque-sni
-  AETHER_TLS_VERIFY                --tls-verify (on by default with --team)
-  AETHER_ECH                       --ech
-  AETHER_ECH_DNS                   --ech-dns
-  AETHER_ECH_DOMAIN                --ech-domain
-  AETHER_TLS_CIPHERS               --tls-ciphers
-  AETHER_TLS13_CIPHERS             --tls13-ciphers
-  AETHER_TLS_GROUPS                --tls-groups
-  AETHER_TLS_KEY_SHARES            --tls-key-shares
-  AETHER_DISABLE_GREASE            --disable-grease
-  AETHER_ENABLE_GREASE_SIGALGS     --enable-grease-sigalgs
-  AETHER_TLS_SIGALGS               --tls-sigalgs
-  AETHER_TLS_CERT_COMPRESSION      --tls-cert-compression
-  AETHER_TLS_ALPS                  --tls-alps
-  AETHER_TLS_TRUST_ANCHORS         --tls-trust-anchors
-  AETHER_TLS_SERVER_PADDING        --tls-server-padding
-  AETHER_ENABLE_ECH_GREASE         --enable-ech-grease
-  AETHER_DISABLE_OCSP_STAPLING     --disable-ocsp-stapling
-  AETHER_DISABLE_SCT               --disable-sct
-  AETHER_DISABLE_SESSION_TICKET    --disable-session-ticket
-  AETHER_DISABLE_EXTENSION_PERMUTATION
-                                   --disable-extension-permutation
-  AETHER_WG_KEEPALIVE              --keepalive
-  AETHER_WG_NO_PROFILE_RETRY       --no-profile-retry
-  AETHER_TEAM                      --team
-  AETHER_ACCESS_CLIENT_ID          --access-id
-  AETHER_ACCESS_CLIENT_SECRET      --access-secret
-  AETHER_ACCESS_TOKEN              --access-token
-  AETHER_ACCESS_EMAIL              --access-email
-  AETHER_GATEWAY                   --gateway
-  AETHER_ROUTE_BLOCK               --route-block
-  AETHER_ROUTE_DIRECT              --route-direct
-  AETHER_ROUTES_FILE               --routes
-  AETHER_CONFIG                    --config
-  AETHER_WG_CONFIG                 --wg-config
-  AETHER_MASQUE_CONFIG             --masque-config
-  AETHER_REGISTER                  --register
-  AETHER_API_ADDRESS               --api-address
-  AETHER_API_SNI                   --api-sni
-  AETHER_API_HOST                  --api-host
-  AETHER_PERF_PROFILE              --perf
-  AETHER_LOG_LEVEL                 --log-level
-
-  AETHER_ROUTE_SNIFF               0 to stop reading the server name from the
-                                   first bytes of a connection (on by default,
-                                   which is what makes routing rules work behind
-                                   a tun front end)
-  AETHER_ROUTE_SNIFF_MS            how long to wait for those bytes (default 400)
-  AETHER_WG_ENDPOINT_COOLDOWN_SECS how long an endpoint is left out of rescans once
-                                   its tunnel ended twice in a row, each time within
-                                   five minutes of starting (default 300)
-  AETHER_WG_STALE_SECS             silence on a wireguard tunnel before it counts
-                                   as dead (default 10)
-  AETHER_MASQUE_H2_KEEPALIVE_SECS  HTTP/2 keepalive interval (default 15)
-  AETHER_MASQUE_H2_KEEPALIVE_TIMEOUT_SECS
-                                   how long a keepalive may go unanswered (default 20)
-  AETHER_IRONCLAD_PORT             port the ironclad scan makes its real HTTP
-                                   request to (default 80)
-  AETHER_MAX_CLIENTS               proxy clients served at once; past it new ones
-                                   wait for a free slot (default by resources,
-                                   512 to 8192)
-  AETHER_HALF_CLOSE_SECS           how long a connection the client has finished
-                                   sending on may sit silent before it is closed
-                                   (default 30)
-  AETHER_TCP_KEEPALIVE_SECS        idle time before a keep-alive checks that the
-                                   other end of a connection is still there;
-                                   three unanswered ones close it (default 60)
-  AETHER_TCP_CONNECT_SECS          how long a connection through the tunnel may
-                                   take to open (default 30)
-  AETHER_REPROVISION               0 to stop replacing an identity Cloudflare has
-                                   refused with a freshly registered one
-  RUST_LOG                         standard rust log filter; overrides --log-level
 
 After startup the proxy is at the address --bind names, 127.0.0.1:1819 by
 default. Check it with:
@@ -638,6 +533,12 @@ pub fn parse_args(args: Vec<String>) -> crate::error::Result<Parsed> {
             "--tor-bind" => set("AETHER_TOR_BIND", next_value!()),
             "--tor-http" => set("AETHER_TOR_HTTP", next_value!()),
             "--tor-dir" => set("AETHER_TOR_DIR", next_value!()),
+            "--tor-country" => set("AETHER_TOR_COUNTRY", next_value!()),
+            "--tor-check" => set("AETHER_TOR_CHECK", next_value!()),
+            "--tor-log" => set("AETHER_TOR_LOG", next_value!()),
+            "--tor-direct-secs" => set("AETHER_TOR_DIRECT_SECS", next_value!()),
+            "--tor-stall-secs" => set("AETHER_TOR_STALL_SECS", next_value!()),
+            "--tor-bridge-secs" => set("AETHER_TOR_BRIDGE_SECS", next_value!()),
             "--psiphon" => set("AETHER_PSIPHON", "chain"),
             "--psiphon-reverse" => set("AETHER_PSIPHON", "reverse"),
             "--psiphon-only" => set("AETHER_PSIPHON", "only"),
@@ -652,6 +553,11 @@ pub fn parse_args(args: Vec<String>) -> crate::error::Result<Parsed> {
             "--psiphon-dir" => set("AETHER_PSIPHON_DIR", next_value!()),
             "--psiphon-bin" => set("AETHER_PSIPHON_BIN", next_value!()),
             "--psiphon-server-entries" => set("AETHER_PSIPHON_SERVER_ENTRIES", next_value!()),
+            "--psiphon-ready-secs" => set("AETHER_PSIPHON_READY_SECS", next_value!()),
+            "--psiphon-interface" => set("AETHER_PSIPHON_INTERFACE", next_value!()),
+            "--psiphon-sponsor-id" => set("AETHER_PSIPHON_SPONSOR_ID", next_value!()),
+            "--psiphon-channel-id" => set("AETHER_PSIPHON_PROPAGATION_CHANNEL_ID", next_value!()),
+            "--psiphon-server-list" => set("AETHER_PSIPHON_SERVER_LIST", next_value!()),
             "--mark" => set("AETHER_MARK", next_value!()),
             "--tun" => set("AETHER_TUN", next_value!()),
             "--tun-addr" => set("AETHER_TUN_ADDR", next_value!()),
@@ -733,9 +639,17 @@ pub fn parse_args(args: Vec<String>) -> crate::error::Result<Parsed> {
             "--fragment" => set("AETHER_MASQUE_H2_FRAGMENT", "1"),
             "--fragment-size" => set("AETHER_MASQUE_H2_FRAGMENT_SIZE", next_value!()),
             "--fragment-delay" => set("AETHER_MASQUE_H2_FRAGMENT_DELAY", next_value!()),
+            "--fragment-sni" => set("AETHER_MASQUE_H2_FRAGMENT_SNI", "1"),
+            "--mtu" => set("AETHER_MASQUE_MTU", next_value!()),
+            "--h2-keepalive-secs" => set("AETHER_MASQUE_H2_KEEPALIVE_SECS", next_value!()),
+            "--h2-keepalive-timeout-secs" => {
+                set("AETHER_MASQUE_H2_KEEPALIVE_TIMEOUT_SECS", next_value!())
+            }
 
             "--keepalive" => set("AETHER_WG_KEEPALIVE", next_value!()),
             "--no-profile-retry" => set("AETHER_WG_NO_PROFILE_RETRY", "1"),
+            "--stale-secs" => set("AETHER_WG_STALE_SECS", next_value!()),
+            "--endpoint-cooldown-secs" => set("AETHER_WG_ENDPOINT_COOLDOWN_SECS", next_value!()),
 
             "--config" => set("AETHER_CONFIG", next_value!()),
             "--wg-config" => set("AETHER_WG_CONFIG", next_value!()),
@@ -773,6 +687,15 @@ pub fn parse_args(args: Vec<String>) -> crate::error::Result<Parsed> {
             "--disable-session-ticket" => set("AETHER_DISABLE_SESSION_TICKET", "1"),
             "--disable-extension-permutation" => set("AETHER_DISABLE_EXTENSION_PERMUTATION", "1"),
             "--tls-verify" => set("AETHER_TLS_VERIFY", "1"),
+            "--no-tls-verify" => set("AETHER_TLS_VERIFY", "0"),
+            "--max-clients" => set("AETHER_MAX_CLIENTS", next_value!()),
+            "--half-close-secs" => set("AETHER_HALF_CLOSE_SECS", next_value!()),
+            "--tcp-keepalive-secs" => set("AETHER_TCP_KEEPALIVE_SECS", next_value!()),
+            "--tcp-connect-secs" => set("AETHER_TCP_CONNECT_SECS", next_value!()),
+            "--route-sniff-ms" => set("AETHER_ROUTE_SNIFF_MS", next_value!()),
+            "--no-route-sniff" => set("AETHER_ROUTE_SNIFF", "0"),
+            "--ironclad-port" => set("AETHER_IRONCLAD_PORT", next_value!()),
+            "--no-reprovision" => set("AETHER_REPROVISION", "0"),
             "--perf" => set("AETHER_PERF_PROFILE", next_value!()),
             "--log-level" => set("AETHER_LOG_LEVEL", next_value!()),
             "--verbose" => set("AETHER_LOG_LEVEL", "debug"),

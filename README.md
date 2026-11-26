@@ -22,7 +22,7 @@ Unlike traditional VPN clients, Aether is built for environments where Deep Pack
 
 ## Docker
 
-The released artifact is a container image, `ghcr.io/cluvexstudio/aether:latest`. It is published by a manual run of the `Build and Publish` workflow, tagged with the commit hash and `latest`.
+The released artifact is a container image, `ghcr.io/mehdisadeghidev/aether:latest`. It is published by a manual run of the `Build and Publish` workflow, tagged with the commit hash and `latest`.
 
 > **The SOCKS5 proxy has no authentication.** Anyone who can reach the port can use your tunnel. Every command below publishes the port to `127.0.0.1` only, so it stays reachable from your own machine and nothing else. Do not replace it with `-p 1819:1819`, because that form listens on every interface of the host and turns the proxy into an open relay. If you genuinely need to serve other machines, put an authenticated front end in front of it and firewall the port.
 
@@ -31,14 +31,14 @@ The `-v aether-data:/data` volume keeps the generated WARP identity between runs
 Pull and run (interactive mode is required for initial setup):
 
 ```bash
-docker run -it -p 127.0.0.1:1819:1819 -v aether-data:/data ghcr.io/cluvexstudio/aether:latest
+docker run -it -p 127.0.0.1:1819:1819 -v aether-data:/data ghcr.io/mehdisadeghidev/aether:latest
 ```
 
 Skip the prompts by passing flags:
 
 ```bash
 docker run -it -p 127.0.0.1:1819:1819 -v aether-data:/data \
-  ghcr.io/cluvexstudio/aether:latest --masque --balanced
+  ghcr.io/mehdisadeghidev/aether:latest --masque --balanced
 ```
 
 ### A whole network through the tunnel
@@ -51,7 +51,7 @@ docker run -d --name aether --restart always \
   --cap-add NET_ADMIN \
   --device /dev/net/tun \
   -v aether-data:/data \
-  ghcr.io/cluvexstudio/aether:latest \
+  ghcr.io/mehdisadeghidev/aether:latest \
   --tun tun0 --mark 0xff --masque --h2 --stats
 ```
 

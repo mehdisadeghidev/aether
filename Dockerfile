@@ -36,11 +36,10 @@ WORKDIR /app
 COPY --from=builder /usr/src/app/target/release/aether /usr/local/bin/aether
 COPY --from=builder /usr/src/app/pt /usr/local/bin/pt
 
-ENV AETHER_SOCKS=0.0.0.0:1819
-ENV AETHER_CONFIG=/data/aether.toml
-
 VOLUME ["/data"]
 
 EXPOSE 1819
 
-ENTRYPOINT ["aether"]
+# the flags the image needs, with any of your own appended after them
+ENTRYPOINT ["aether", "--bind", "0.0.0.0:1819", "--config", "/data/aether.toml"]
+CMD []

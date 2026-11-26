@@ -1268,34 +1268,14 @@ mod tests {
     async fn report_which_masque_ranges_answer_on_this_network() {
         const TAILS: &[u8] = &[1, 2, 3];
 
-        let timeout = Duration::from_millis(
-            crate::settings::var("AETHER_PROBE_TIMEOUT_MS")
-                .ok()
-                .and_then(|raw| raw.trim().parse::<u64>().ok())
-                .filter(|ms| *ms > 0)
-                .unwrap_or(10_000),
-        );
-
-        let attempts = crate::settings::var("AETHER_PROBE_ATTEMPTS")
-            .ok()
-            .and_then(|raw| raw.trim().parse::<u32>().ok())
-            .filter(|n| *n > 0)
-            .unwrap_or(2);
-
-        let ports: Vec<u16> = match crate::settings::var("AETHER_PROBE_PORTS") {
-            Ok(raw) => raw
-                .split(',')
-                .filter_map(|p| p.trim().parse::<u16>().ok())
-                .collect(),
-            Err(_) => vec![443],
-        };
-        let ports = if ports.is_empty() { vec![443] } else { ports };
+        let timeout = Duration::from_millis(10_000);
+        let attempts = 2;
+        let ports: Vec<u16> = vec![443];
 
         println!();
         println!("probing the masque ranges from this network");
         println!("  udp timeout {timeout:?}, {attempts} attempt(s), hosts {TAILS:?}");
         println!("  udp ports {ports:?}");
-        println!("  override: AETHER_PROBE_TIMEOUT_MS, AETHER_PROBE_ATTEMPTS, AETHER_PROBE_PORTS");
         println!();
 
         let control: Vec<SocketAddr> = vec![

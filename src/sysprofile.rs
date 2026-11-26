@@ -147,16 +147,6 @@ fn detect_tier(cpus: usize, mem_mb: Option<u64>) -> Tier {
     }
 }
 
-/// Reads a buffer size in bytes from the environment, ignoring anything
-/// outside what a TCP socket can sensibly be given.
-fn buffer_override(key: &str, fallback: usize) -> usize {
-    crate::settings::var(key)
-        .ok()
-        .and_then(|value| value.trim().parse::<usize>().ok())
-        .filter(|bytes| (16 * 1024..=64 * 1024 * 1024).contains(bytes))
-        .unwrap_or(fallback)
-}
-
 fn build_tuning() -> Tuning {
     let cpus = detected_cpus();
     let mem_mb = total_mem_mb();
@@ -180,9 +170,6 @@ fn build_tuning() -> Tuning {
         Tier::Medium => (1024 * 1024, 256 * 1024),
         Tier::High => (2 * 1024 * 1024, 512 * 1024),
     };
-
-    let netstack_tcp_rx_buf = buffer_override("AETHER_NETSTACK_TCP_RX", netstack_tcp_rx_buf);
-    let netstack_tcp_tx_buf = buffer_override("AETHER_NETSTACK_TCP_TX", netstack_tcp_tx_buf);
 
     // How much unacknowledged data the HTTP/2 edge may have on its way to us.
     // It is a promise rather than a reservation, but it does bound how much

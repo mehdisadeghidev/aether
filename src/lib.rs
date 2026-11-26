@@ -80,10 +80,10 @@ pub async fn run_with(args: Vec<String>) -> Result<()> {
         .filter(|v| matches!(v.as_str(), "error" | "warn" | "info" | "debug" | "trace"))
         .unwrap_or_else(|| "info".to_string());
     let default_filter = format!("info,aether={level}");
-    let _ =
-        env_logger::Builder::from_env(env_logger::Env::default().default_filter_or(default_filter))
-            .format_timestamp_millis()
-            .try_init();
+    let _ = env_logger::Builder::new()
+        .parse_filters(&default_filter)
+        .format_timestamp_millis()
+        .try_init();
 
     log::info!("Aether v{}", env!("CARGO_PKG_VERSION"));
     sysprofile::log_summary();

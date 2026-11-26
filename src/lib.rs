@@ -201,9 +201,16 @@ pub async fn run_with(args: Vec<String>) -> Result<()> {
 
     match psiphon::mode() {
         psiphon::Mode::Chain => {
-            let through = held;
             let state = psiphon::state_dir(&base_config);
-            let chain = tokio::spawn(psiphon::run_chain(through, state));
+            // With a tun front end there is no socks5 listener for Psiphon to dial the tunnel
+            // through: the kernel routes its packets into the tun, so it dials out like any other
+            // program and the tun's TCP is handed to its listener instead.
+            let chain = if crate::settings::var("AETHER_TUN").is_ok() {
+                tokio::spawn(psiphon::run_chain_on_tun(state))
+            } else {
+                let through = held;
+                tokio::spawn(psiphon::run_chain(through, state))
+            };
             watch_chain(
                 "psiphon",
                 INSIDE_THE_TUNNEL,

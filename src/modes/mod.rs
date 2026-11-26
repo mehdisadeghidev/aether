@@ -261,7 +261,19 @@ pub(crate) fn packet_wire(
     outbound_tx: tokio::sync::mpsc::Sender<Vec<u8>>,
 ) -> Result<Wire> {
     match tun {
-        Some(tun) => Ok(Wire::Tun(tun.pump(mtu, inbound_rx, outbound_tx))),
+        Some(tun) => {
+            let split = if crate::settings::var("AETHER_PSIPHON").as_deref() == Ok("chain") {
+                Some(tun_psiphon_split(ipv4, ipv6, mtu)?)
+            } else {
+                None
+            };
+            Ok(Wire::Tun(tun.pump_split(
+                mtu,
+                inbound_rx,
+                outbound_tx,
+                split,
+            )))
+        }
         None => Ok(Wire::Stack(netstack::spawn(
             ipv4,
             ipv6,
@@ -270,6 +282,63 @@ pub(crate) fn packet_wire(
             outbound_tx,
         )?)),
     }
+}
+
+/// The tun front end's half of the psiphon chain: a stack that terminates the TCP
+/// the tun carries, and a relay that dials every connection it takes through the
+/// listener Psiphon serves, so the exit is a Psiphon exit while Psiphon itself
+/// rides the tunnel.
+fn tun_psiphon_split(ipv4: &str, ipv6: &str, mtu: usize) -> Result<tun::TunSplit> {
+    let (to_stack_tx, to_stack_rx) = tokio::sync::mpsc::channel(256);
+    let (from_stack_tx, from_stack_rx) = tokio::sync::mpsc::channel(256);
+    let mut accepted = netstack::spawn_acceptor(mtu, to_stack_rx, from_stack_tx);
+
+    let proxy = format!("socks5://{}", crate::psiphon::listen_address());
+    let proxy = crate::upstream::Upstream::parse(&proxy)?;
+    tokio::spawn(async move {
+        while let Some(taken) = accepted.recv().await {
+            let proxy = proxy.clone();
+            tokio::spawn(async move {
+                if let Ok(stream) = proxy.connect(taken.dst).await {
+                    relay_accepted(taken.conn, stream).await;
+                }
+            });
+        }
+    });
+
+    Ok(tun::TunSplit::new(ipv4, ipv6, to_stack_tx, from_stack_rx))
+}
+
+/// Moves bytes between a connection the tun's stack terminated and the proxy
+/// stream that carries it, until either end closes.
+async fn relay_accepted(conn: netstack::TcpConn, stream: tokio::net::TcpStream) {
+    use tokio::io::{AsyncReadExt, AsyncWriteExt};
+
+    let (sender, mut from_stack) = conn.into_split();
+    let (mut rd, mut wr) = stream.into_split();
+    let up = async {
+        while let Some(chunk) = from_stack.recv().await {
+            if wr.write_all(&chunk).await.is_err() {
+                return;
+            }
+        }
+        let _ = wr.shutdown().await;
+    };
+    let down = async {
+        let mut buf = vec![0u8; 16 * 1024];
+        loop {
+            match rd.read(&mut buf).await {
+                Ok(0) | Err(_) => break,
+                Ok(n) => {
+                    if sender.send(buf[..n].to_vec()).await.is_err() {
+                        break;
+                    }
+                }
+            }
+        }
+        sender.close().await;
+    };
+    tokio::join!(up, down);
 }
 
 pub(crate) fn env_value(key: &str) -> Option<String> {

@@ -27,6 +27,10 @@ pub enum CliError {
         "--tun cannot carry {0}: it replaces socks5 with a kernel interface, and this mode needs the userspace tcp stack that socks5 gives it"
     )]
     TunNeedsStack(String),
+    #[error(
+        "--tun cannot carry {0}: a carrier inside the tunnel dials the socks5 listener it lives behind, and --tun replaces that listener with a kernel interface, so the carrier would wait on a port nothing serves; put it under the tunnel instead with --tor-reverse or --psiphon-reverse"
+    )]
+    ChainNeedsSocks(String),
     #[error("--bind {0} is not an address and port aether can listen on, such as 127.0.0.1:1819")]
     BadListen(String),
     #[error("--register takes masque, wg, gool, gool-classic, mim or all, not '{0}'")]
@@ -660,6 +664,15 @@ fn check_tun_conflicts() -> crate::error::Result<()> {
 
     if crate::settings::var("AETHER_EXIT_LOC").is_ok() {
         return Err(CliError::TunNeedsStack("--exit-country".to_string()).into());
+    }
+
+    // A carrier inside the tunnel dials the socks5 listener the core holds for it; with --tun
+    // that listener is never bound, so it would wait on a port nothing serves, for ever. Psiphon
+    // is not refused: its chain runs on the tun's own TCP instead (psiphon::run_chain_on_tun).
+    for (key, flag) in [("AETHER_TOR", "--tor")] {
+        if crate::settings::var(key).as_deref() == Ok("chain") {
+            return Err(CliError::ChainNeedsSocks(flag.to_string()).into());
+        }
     }
 
     Ok(())

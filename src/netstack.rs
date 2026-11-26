@@ -386,6 +386,20 @@ pub struct NetStack {
     next_port: u16,
     data_in_tx: mpsc::Sender<DataIn>,
     tcp_limits: TcpLimits,
+    /// Set when the stack terminates connections a peer opens on it (the tun
+    /// front end) rather than dialling out itself (the socks front end).
+    accept: Option<mpsc::Sender<Accepted>>,
+    /// One listening socket per port a peer has tried, so a second connection to
+    /// the same destination port is taken too.
+    listeners: HashMap<u16, SocketHandle>,
+}
+
+/// A connection a peer opened on the stack: where it meant to go, who opened
+/// it, and the byte pipe that carries it.
+pub struct Accepted {
+    pub dst: SocketAddr,
+    pub src: SocketAddr,
+    pub conn: TcpConn,
 }
 
 fn strip_cidr(s: &str) -> &str {
@@ -541,11 +555,193 @@ fn spawn_with_limits(
         next_port: 49152,
         data_in_tx: data_in_tx.clone(),
         tcp_limits,
+        accept: None,
+        listeners: HashMap::new(),
     };
 
     tokio::spawn(run(stack, cmd_rx, data_in_rx, inbound_rx, outbound_tx));
 
     Ok(StackHandle { cmd_tx })
+}
+
+/// A stack that terminates the TCP a peer opens on it, for the tun front end:
+/// every connection is handed back through the receiver, to be dialled out
+/// through whatever the caller wants (Psiphon, in the chained tun mode). The
+/// interface is in AnyIP, so a connection to any destination address is taken
+/// and that address is what the connection is handed back with.
+pub fn spawn_acceptor(
+    mtu: usize,
+    inbound_rx: mpsc::Receiver<Vec<u8>>,
+    outbound_tx: mpsc::Sender<Vec<u8>>,
+) -> mpsc::Receiver<Accepted> {
+    let mut device = StackDevice::new(mtu);
+
+    let config = Config::new(HardwareAddress::Ip);
+    let mut iface = Interface::new(config, &mut device, Instant::now());
+    iface.set_any_ip(true);
+    // AnyIP takes the packets in; the routes are only there so replies have a
+    // way out, and on a medium-ip device the gateway is never consulted.
+    let _ = iface
+        .routes_mut()
+        .add_default_ipv4_route(Ipv4Address::new(192, 0, 2, 1));
+    let _ = iface
+        .routes_mut()
+        .add_default_ipv6_route(Ipv6Address::new(0xfe80, 0, 0, 0, 0, 0, 0, 1));
+
+    let (cmd_tx, cmd_rx) = mpsc::channel(256);
+    let (data_in_tx, data_in_rx) = mpsc::channel(app_queue());
+    let (accept_tx, accept_rx) = mpsc::channel(app_queue());
+
+    let stack = NetStack {
+        iface,
+        device,
+        sockets: SocketSet::new(Vec::new()),
+        tcp_conns: HashMap::new(),
+        udp_conns: HashMap::new(),
+        next_id: 1,
+        next_port: 49152,
+        data_in_tx: data_in_tx.clone(),
+        tcp_limits: TcpLimits::from_env(),
+        accept: Some(accept_tx),
+        listeners: HashMap::new(),
+    };
+
+    let _handle = StackHandle { cmd_tx };
+    tokio::spawn(async move {
+        // Held for as long as the stack runs: a closed command channel would
+        // stop the loop before a single packet was carried.
+        let _handle = _handle;
+        let _ = run(stack, cmd_rx, data_in_rx, inbound_rx, outbound_tx).await;
+    });
+
+    accept_rx
+}
+
+/// The destination port of a bare SYN, which is a peer opening a connection.
+/// Extension headers and fragmented packets are left alone: they are rare on a
+/// tun and the connection falls back to the tunnel path.
+fn tcp_syn_port(packet: &[u8]) -> Option<u16> {
+    let (tcp_at, protocol) = match packet.first()? >> 4 {
+        4 => {
+            let ihl = usize::from(packet[0] & 0x0f) * 4;
+            (ihl, *packet.get(9)?)
+        }
+        6 => (40, *packet.get(6)?),
+        _ => return None,
+    };
+    if protocol != 6 {
+        return None;
+    }
+    let tcp = packet.get(tcp_at..tcp_at + 14)?;
+    let flags = tcp[13];
+    if flags & 0x02 == 0 || flags & 0x10 != 0 {
+        return None;
+    }
+    Some(u16::from_be_bytes([tcp[2], tcp[3]]))
+}
+
+fn listen_on(s: &mut NetStack, port: u16) {
+    let rx_buf = tcp::SocketBuffer::new(vec![0u8; tcp_rx_buf()]);
+    let tx_buf = tcp::SocketBuffer::new(vec![0u8; tcp_tx_buf()]);
+    let mut socket = tcp::Socket::new(rx_buf, tx_buf);
+    socket.set_nagle_enabled(false);
+    let keepalive = s.tcp_limits.keepalive;
+    socket.set_keep_alive(Some(smol_duration(keepalive)));
+    socket.set_timeout(Some(smol_duration(keepalive.saturating_mul(3))));
+    // No address: AnyIP means any destination address is ours to answer for.
+    if socket.listen(port).is_ok() {
+        let handle = s.sockets.add(socket);
+        s.listeners.insert(port, handle);
+    }
+}
+
+/// Opens a listener for every port a SYN in the queue asks for.
+fn learn_listeners(s: &mut NetStack) {
+    let mut wanted: Vec<u16> = Vec::new();
+    for packet in s.device.rx.iter() {
+        if let Some(port) = tcp_syn_port(packet)
+            && !s.listeners.contains_key(&port)
+            && !wanted.contains(&port)
+        {
+            wanted.push(port);
+        }
+    }
+    for port in wanted {
+        listen_on(s, port);
+    }
+}
+
+/// Hands every established listener back as a connection, and puts a fresh
+/// listener in its place so the next connection to that port is taken too.
+fn hand_over_accepted(s: &mut NetStack) {
+    let Some(accept) = s.accept.clone() else {
+        return;
+    };
+    let ports: Vec<u16> = s.listeners.keys().copied().collect();
+    for port in ports {
+        let Some(handle) = s.listeners.get(&port).copied() else {
+            continue;
+        };
+        let (state, local, remote) = {
+            let socket = s.sockets.get::<tcp::Socket>(handle);
+            (
+                socket.state(),
+                socket.local_endpoint(),
+                socket.remote_endpoint(),
+            )
+        };
+        match state {
+            tcp::State::Established | tcp::State::CloseWait => {
+                let (Some(local), Some(remote)) = (local, remote) else {
+                    continue;
+                };
+                s.listeners.remove(&port);
+                listen_on(s, port);
+
+                let id = s.next_id;
+                s.next_id += 1;
+                let (to_app, from_stack) = mpsc::channel(app_queue());
+                s.tcp_conns.insert(
+                    id,
+                    TcpState {
+                        handle,
+                        to_app,
+                        from_stack_rx: None,
+                        connect_resp: None,
+                        connect_deadline: std::time::Instant::now() + s.tcp_limits.connect,
+                        pending: Vec::new(),
+                        established: true,
+                        half_closed: false,
+                        orphaned_at: None,
+                        aborted: false,
+                    },
+                );
+                let conn = TcpConn {
+                    id,
+                    from_stack,
+                    data_in: s.data_in_tx.clone(),
+                    split: false,
+                };
+                let accepted = Accepted {
+                    dst: endpoint_to_socketaddr(local),
+                    src: endpoint_to_socketaddr(remote),
+                    conn,
+                };
+                if accept.try_send(accepted).is_err() {
+                    // Nobody is dialling what the peer opened: reset it rather
+                    // than leave it established and unanswered.
+                    if let Some(st) = s.tcp_conns.get_mut(&id) {
+                        st.aborted = true;
+                    }
+                }
+            }
+            tcp::State::Closed | tcp::State::TimeWait => {
+                s.sockets.remove(handle);
+                s.listeners.remove(&port);
+            }
+            _ => {}
+        }
+    }
 }
 
 fn alloc_port(p: &mut u16) -> u16 {
@@ -567,12 +763,18 @@ async fn run(
 
     loop {
         let now = Instant::now();
+        if s.accept.is_some() {
+            learn_listeners(&mut s);
+        }
         let poll_outcome = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
             s.iface.poll(now, &mut s.device, &mut s.sockets);
         }));
         if poll_outcome.is_err() {
             s.device.rx.clear();
             s.device.tx.clear();
+        }
+        if s.accept.is_some() {
+            hand_over_accepted(&mut s);
         }
         let tcp_busy = service_tcp(&mut s);
         let udp_busy = service_udp(&mut s);
@@ -1357,6 +1559,8 @@ mod tests {
             next_port: 40000,
             data_in_tx: mpsc::channel(1).0,
             tcp_limits: TcpLimits::from_env(),
+            accept: None,
+            listeners: HashMap::new(),
         };
 
         handle_cmd(
@@ -1399,6 +1603,8 @@ mod tests {
             next_port: 40000,
             data_in_tx: mpsc::channel(1).0,
             tcp_limits: TcpLimits::from_env(),
+            accept: None,
+            listeners: HashMap::new(),
         };
 
         for _ in 0..10 {
@@ -1413,5 +1619,100 @@ mod tests {
             "everything past the channel capacity is dropped"
         );
         assert_eq!(outbound_rx.len(), 2, "the channel keeps what fits");
+    }
+
+    /// The tun front end's stack: a peer opens a connection to an address that
+    /// is not the stack's own, and the stack takes it and says where it was
+    /// headed, so the caller can dial that through Psiphon instead.
+    #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+    async fn the_acceptor_takes_a_connection_for_any_address_and_names_it() {
+        let app = Ipv4Addr::new(10, 0, 0, 9);
+        let app_port = 40000u16;
+        let wanted = Ipv4Addr::new(1, 2, 3, 4);
+        let wanted_port = 443u16;
+
+        let (inbound_tx, inbound_rx) = mpsc::channel::<Vec<u8>>(64);
+        let (outbound_tx, mut outbound_rx) = mpsc::channel::<Vec<u8>>(256);
+        let mut accepted = spawn_acceptor(1400, inbound_rx, outbound_tx);
+
+        let deadline = tokio::time::Instant::now() + StdDuration::from_secs(5);
+        let open = |from: u16, seq: u32| {
+            let inbound_tx = inbound_tx.clone();
+            async move {
+                inbound_tx
+                    .send(build_tcp((app, from), (wanted, wanted_port), seq, 0, 0x02))
+                    .await
+                    .expect("the syn goes in");
+            }
+        };
+
+        open(app_port, 1000).await;
+
+        // The reply has to come from the address that was dialled, not from an
+        // address of the stack's own: the peer's kernel checks it.
+        let (server_seq, from) = loop {
+            let pkt = tokio::time::timeout_at(deadline, outbound_rx.recv())
+                .await
+                .expect("the stack should answer the syn")
+                .expect("outbound stays open");
+            if let Some(seg) = parse_tcp(&pkt)
+                && seg.src_port == wanted_port
+                && seg.flags & 0x12 == 0x12
+            {
+                break (seg.seq, Ipv4Addr::new(pkt[12], pkt[13], pkt[14], pkt[15]));
+            }
+        };
+        assert_eq!(
+            from, wanted,
+            "the syn-ack must come from the dialled address"
+        );
+
+        inbound_tx
+            .send(build_tcp(
+                (app, app_port),
+                (wanted, wanted_port),
+                1001,
+                server_seq.wrapping_add(1),
+                0x10,
+            ))
+            .await
+            .expect("the ack goes in");
+
+        let taken = tokio::time::timeout(StdDuration::from_secs(5), accepted.recv())
+            .await
+            .expect("the connection should be handed over")
+            .expect("the accept channel stays open");
+        assert_eq!(taken.dst, SocketAddr::new(IpAddr::V4(wanted), wanted_port));
+        assert_eq!(taken.src, SocketAddr::new(IpAddr::V4(app), app_port));
+
+        // What the caller writes goes out toward the peer.
+        taken.conn.send(b"hello".to_vec()).await.expect("send");
+        let sent = loop {
+            let pkt = tokio::time::timeout_at(deadline, outbound_rx.recv())
+                .await
+                .expect("the stack should carry the payload")
+                .expect("outbound stays open");
+            if let Some(seg) = parse_tcp(&pkt)
+                && seg.dst_port == app_port
+            {
+                let ihl = usize::from(pkt[0] & 0x0f) * 4;
+                let payload = &pkt[ihl + 20..];
+                if !payload.is_empty() {
+                    break payload.to_vec();
+                }
+            }
+        };
+        assert_eq!(sent, b"hello", "the payload reaches the peer");
+
+        // A second connection to the same destination port is taken as well: the
+        // listener is put back after every hand-over. It comes from another
+        // source port, as a second connection would.
+        open(app_port + 1, 2000).await;
+        let again = tokio::time::timeout_at(deadline, outbound_rx.recv())
+            .await
+            .expect("the stack should answer the second syn")
+            .expect("outbound stays open");
+        let answered = parse_tcp(&again).is_some_and(|seg| seg.flags & 0x12 == 0x12);
+        assert!(answered, "a second connection to the same port is refused");
     }
 }

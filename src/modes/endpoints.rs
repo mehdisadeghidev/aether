@@ -338,7 +338,8 @@ mod tests {
     #[test]
     fn asking_for_a_scan_leaves_both_hops_open() {
         for written in ["auto", "scan", "off", "none", "0"] {
-            let lookup = env(&[("AETHER_WIW_PEERS", written)]);
+            let pairs = [("AETHER_WIW_PEERS", written)];
+            let lookup = env(&pairs);
             assert!(scan_keyword(written), "{written} means scan");
             assert!(
                 wiw_endpoints_of(&lookup).expect(written).is_empty(),

@@ -858,7 +858,7 @@ async fn api_call_by(
 }
 
 /// `--fragment`: the ClientHello of the calls to the WARP API goes out in pieces as on MASQUE over
-/// HTTP/2, sized and spaced by the same `--fragment-size` and `--fragment-delay`, for networks that
+/// HTTP/2, sized and spaced by the same `--fragment-size` and `--fragment-delay-ms`, for networks that
 /// filter the name of the API. Without `--fragment` it goes whole.
 fn api_fragment() -> crate::fragment::FragmentConfig {
     let fragment = crate::fragment::FragmentConfig::from_env();
@@ -1463,7 +1463,7 @@ mod tests {
 
     #[test]
     fn the_calls_to_the_api_are_fragmented_as_masque_over_http2_is() {
-        // --fragment, --fragment-size and --fragment-delay. No other test sets them; the HTTP/2
+        // --fragment, --fragment-size and --fragment-delay-ms. No other test sets them; the HTTP/2
         // dial reads them as well, and its ClientHello in pieces changes nothing a test checks.
         const SETTINGS: [&str; 3] = [
             "AETHER_MASQUE_H2_FRAGMENT",

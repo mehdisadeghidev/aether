@@ -198,8 +198,8 @@ impl Frontend {
 
         if crate::settings::var("AETHER_MARK").is_err() {
             log::warn!(
-                "[-] --mark is not set: on a router that routes traffic into the tun, the \
-                 tunnel's own sockets will loop back into it; set --mark and let a rule around \
+                "[-] --fwmark is not set: on a router that routes traffic into the tun, the \
+                 tunnel's own sockets will loop back into it; set --fwmark and let a rule around \
                  that mark reach the internet directly"
             );
         }

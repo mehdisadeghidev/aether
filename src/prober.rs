@@ -1373,7 +1373,7 @@ mod tests {
             println!("  this network answers no quic at all, not even a public resolver,");
             println!("  so udp 443 is blocked here rather than these ranges being blocked.");
             println!("  reordering MASQUE_CIDRS_V4 cannot help; masque needs its http/2");
-            println!("  fallback over tcp 443 (--masque-http2) on this network.");
+            println!("  fallback over tcp 443 (--h2) on this network.");
         } else {
             println!("  quic works to other hosts but every warp range stayed silent,");
             println!("  so these ranges really are filtered here.");

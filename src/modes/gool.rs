@@ -67,7 +67,7 @@ pub(crate) async fn run_gool(
 
             if !rescanning {
                 log::warn!(
-                    "[-] the endpoints you chose failed {consecutive_fails} times in a row; still retrying them, drop --wiw-outer/--wiw-inner to let the scan pick instead"
+                    "[-] the endpoints you chose failed {consecutive_fails} times in a row; still retrying them, drop --gool-outer/--gool-inner to let the scan pick instead"
                 );
             }
 

@@ -99,7 +99,7 @@ type CertDecompressFn =
 /// The groups of the fingerprint, in order, unless --tls-groups names others.
 const CHROME_GROUPS: &str = "P-256:X25519:P-384";
 
-/// The TLS 1.2 cipher suites of the fingerprint unless --tls-ciphers names others: Chrome's
+/// The TLS 1.2 cipher suites of the fingerprint unless --tls12-ciphers names others: Chrome's
 /// own rule, which BoringSSL orders as it does for Chrome, AES-GCM before ChaCha20 on
 /// hardware with AES instructions and after it elsewhere.
 pub const CHROME_CIPHERS: &str = "ALL:!aPSK:!ECDSA+SHA1:!3DES";
@@ -113,10 +113,10 @@ pub struct CipherOption {
     pub variable: &'static str,
 }
 
-/// --tls-ciphers: the TLS 1.2 cipher suites of the handshakes `Fingerprint` makes, in place
+/// --tls12-ciphers: the TLS 1.2 cipher suites of the handshakes `Fingerprint` makes, in place
 /// of Chrome's (`CHROME_CIPHERS`). HTTP/3 lists none: QUIC offers TLS 1.3 alone.
 pub const TLS_CIPHERS: CipherOption = CipherOption {
-    flag: "--tls-ciphers",
+    flag: "--tls12-ciphers",
     variable: "AETHER_TLS_CIPHERS",
 };
 
@@ -179,7 +179,7 @@ fn set_groups(builder: &mut SslContextBuilder, groups: &str) -> Result<()> {
 /// suites, groups, key shares, signature algorithms and extensions the ClientHello carries.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Fingerprint {
-    /// --tls-ciphers: the TLS 1.2 cipher suites in place of Chrome's, when given.
+    /// --tls12-ciphers: the TLS 1.2 cipher suites in place of Chrome's, when given.
     pub ciphers: Option<String>,
     /// --tls13-ciphers: the TLS 1.3 cipher suites, in order, by their standard names, when
     /// given. Otherwise BoringSSL's order, as Chrome's: AES-GCM first on hardware with AES
@@ -192,9 +192,9 @@ pub struct Fingerprint {
     /// and the first one of the other kind, post-quantum or not.
     pub key_shares: Option<String>,
     /// GREASE values (RFC 8701) among the cipher suites, the extensions, the groups, the key
-    /// shares and the versions, as Chrome sends them; --disable-grease leaves them out.
+    /// shares and the versions, as Chrome sends them; --no-grease leaves them out.
     pub grease: bool,
-    /// --enable-grease-sigalgs: a GREASE value first among the signature algorithms as well, as
+    /// --grease-sigalgs: a GREASE value first among the signature algorithms as well, as
     /// Chrome sends it, which BoringSSL turns on apart from the rest and leaves off by default.
     pub grease_sigalgs: bool,
     /// --tls-sigalgs: the signature algorithms, in order, by the names BoringSSL gives them
@@ -202,7 +202,7 @@ pub struct Fingerprint {
     /// ClientHello lists, and the only ones a server may sign the handshake with. Otherwise
     /// BoringSSL's: Chrome's eight, then rsa_pkcs1_sha1.
     pub sigalgs: Option<String>,
-    /// --tls-cert-compression: the certificate compression algorithms (RFC 8879) offered, in
+    /// --tls-cert-compress: the certificate compression algorithms (RFC 8879) offered, in
     /// order, of zlib, brotli and zstd, when given; a certificate the server sends compressed
     /// with one of them is decompressed. Otherwise none.
     pub cert_compression: Option<String>,
@@ -210,23 +210,23 @@ pub struct Fingerprint {
     /// of the client's, under the codepoint "new" (0x44cd), Chrome's now, or "old" (0x4469),
     /// Chrome's before, as Chrome 120 sends it, when given. Otherwise none.
     pub alps: Option<String>,
-    /// --tls-trust-anchors: the trust anchor IDs (draft-ietf-tls-trust-anchor-ids) asked for, in
+    /// --tls-anchors: the trust anchor IDs (draft-ietf-tls-trust-anchor-ids) asked for, in
     /// order, as relative OIDs in dotted decimal separated by ':', when given. Otherwise none.
     pub trust_anchors: Option<String>,
-    /// --tls-server-padding: the bytes of padding asked of the server, in BoringSSL's
+    /// --tls-padding: the bytes of padding asked of the server, in BoringSSL's
     /// server_padding extension (0x12e0), when given. Otherwise none.
     pub server_padding: Option<String>,
-    /// --enable-ech-grease: a GREASE encrypted_client_hello when no ECH key is offered, as
+    /// --ech-grease: a GREASE encrypted_client_hello when no ECH key is offered, as
     /// Chrome and Firefox send it. Off by default.
     pub ech_grease: bool,
-    /// OCSP asked for (status_request), as Chrome asks; --disable-ocsp-stapling leaves it out.
+    /// OCSP asked for (status_request), as Chrome asks; --no-ocsp leaves it out.
     pub ocsp_stapling: bool,
-    /// Signed certificate timestamps asked for, as Chrome asks; --disable-sct leaves them out.
+    /// Signed certificate timestamps asked for, as Chrome asks; --no-sct leaves them out.
     pub sct: bool,
-    /// The session_ticket extension, as Chrome sends it; --disable-session-ticket leaves it out.
+    /// The session_ticket extension, as Chrome sends it; --no-session-ticket leaves it out.
     pub session_ticket: bool,
     /// The extensions in a new order on each handshake, as Chrome's;
-    /// --disable-extension-permutation keeps BoringSSL's one order.
+    /// --no-ext-shuffle keeps BoringSSL's one order.
     pub permute_extensions: bool,
 }
 
@@ -263,16 +263,16 @@ fn listed(variable: &str) -> Option<String> {
 }
 
 impl Fingerprint {
-    /// The fingerprint the options give: --tls-ciphers (AETHER_TLS_CIPHERS), --tls13-ciphers
+    /// The fingerprint the options give: --tls12-ciphers (AETHER_TLS_CIPHERS), --tls13-ciphers
     /// (AETHER_TLS13_CIPHERS), --tls-groups (AETHER_TLS_GROUPS), --tls-key-shares
-    /// (AETHER_TLS_KEY_SHARES), --disable-grease (AETHER_DISABLE_GREASE),
-    /// --enable-grease-sigalgs (AETHER_ENABLE_GREASE_SIGALGS), --tls-sigalgs
-    /// (AETHER_TLS_SIGALGS), --tls-cert-compression (AETHER_TLS_CERT_COMPRESSION), --tls-alps
-    /// (AETHER_TLS_ALPS), --tls-trust-anchors (AETHER_TLS_TRUST_ANCHORS), --tls-server-padding
-    /// (AETHER_TLS_SERVER_PADDING), --enable-ech-grease (AETHER_ENABLE_ECH_GREASE),
-    /// --disable-ocsp-stapling (AETHER_DISABLE_OCSP_STAPLING), --disable-sct
-    /// (AETHER_DISABLE_SCT), --disable-session-ticket (AETHER_DISABLE_SESSION_TICKET) and
-    /// --disable-extension-permutation (AETHER_DISABLE_EXTENSION_PERMUTATION).
+    /// (AETHER_TLS_KEY_SHARES), --no-grease (AETHER_DISABLE_GREASE),
+    /// --grease-sigalgs (AETHER_ENABLE_GREASE_SIGALGS), --tls-sigalgs
+    /// (AETHER_TLS_SIGALGS), --tls-cert-compress (AETHER_TLS_CERT_COMPRESSION), --tls-alps
+    /// (AETHER_TLS_ALPS), --tls-anchors (AETHER_TLS_TRUST_ANCHORS), --tls-padding
+    /// (AETHER_TLS_SERVER_PADDING), --ech-grease (AETHER_ENABLE_ECH_GREASE),
+    /// --no-ocsp (AETHER_DISABLE_OCSP_STAPLING), --no-sct
+    /// (AETHER_DISABLE_SCT), --no-session-ticket (AETHER_DISABLE_SESSION_TICKET) and
+    /// --no-ext-shuffle (AETHER_DISABLE_EXTENSION_PERMUTATION).
     pub fn configured() -> Self {
         let on = |variable: &str| crate::settings::flag(variable);
         Fingerprint {
@@ -351,7 +351,7 @@ impl Fingerprint {
     /// Gives `ssl`, one connection of a context `apply` set up offering `alpn`, before its
     /// ClientHello, what BoringSSL takes from a connection only: the key shares of
     /// --tls-key-shares, ALPS of --tls-alps for HTTP/2 and HTTP/3 among `alpn`, GREASE ECH of
-    /// --enable-ech-grease and the padding --tls-server-padding asks of the server.
+    /// --ech-grease and the padding --tls-padding asks of the server.
     pub fn prepare(&self, ssl: &mut SslRef, alpn: &[u8]) -> Result<()> {
         if let Some(list) = &self.key_shares {
             set_key_shares(ssl, list)?;
@@ -532,7 +532,7 @@ fn set_sigalgs(builder: &mut SslContextBuilder, list: &str) -> Result<()> {
     Ok(())
 }
 
-/// A certificate compression algorithm (RFC 8879) --tls-cert-compression offers: its name, its
+/// A certificate compression algorithm (RFC 8879) --tls-cert-compress offers: its name, its
 /// number, and the call BoringSSL decompresses a certificate with.
 struct CertCompression {
     name: &'static str,
@@ -540,7 +540,7 @@ struct CertCompression {
     decompress: CertDecompressFn,
 }
 
-/// The algorithms --tls-cert-compression takes: zlib (RFC 1950), brotli (RFC 7932) and zstd
+/// The algorithms --tls-cert-compress takes: zlib (RFC 1950), brotli (RFC 7932) and zstd
 /// (RFC 8878), as Firefox offers them.
 const CERT_COMPRESSIONS: [CertCompression; 3] = [
     CertCompression {
@@ -799,14 +799,14 @@ fn offer_alps(ssl: &mut SslRef, codepoint: &str, alpn: &[u8]) -> Result<()> {
     Ok(())
 }
 
-/// The bytes of padding --tls-server-padding `value` asks of the server: 0 to 65535.
+/// The bytes of padding --tls-padding `value` asks of the server: 0 to 65535.
 fn server_padding(value: &str) -> Result<u16> {
     value
         .parse()
         .map_err(|_| AetherError::Tls(format!("{value:?} is no number of bytes from 0 to 65535")))
 }
 
-/// Asks the server of `ssl` for the padding --tls-server-padding `value` gives.
+/// Asks the server of `ssl` for the padding --tls-padding `value` gives.
 fn ask_server_padding(ssl: &mut SslRef, value: &str) -> Result<()> {
     let bytes = server_padding(value)?;
     unsafe { SSL_set_server_padding_request(ssl.as_ptr().cast(), bytes) };
@@ -841,10 +841,10 @@ pub fn check_tls_options() -> Result<()> {
     }
     if let Some(list) = &fingerprint.cert_compression {
         offer_cert_compression(&mut builder, list)
-            .map_err(|e| named("--tls-cert-compression", e))?;
+            .map_err(|e| named("--tls-cert-compress", e))?;
     }
     if let Some(list) = &fingerprint.trust_anchors {
-        ask_trust_anchors(&mut builder, list).map_err(|e| named("--tls-trust-anchors", e))?;
+        ask_trust_anchors(&mut builder, list).map_err(|e| named("--tls-anchors", e))?;
     }
     let context = builder.build();
     let mut ssl = Ssl::new(&context).map_err(tls)?;
@@ -855,7 +855,7 @@ pub fn check_tls_options() -> Result<()> {
         offer_alps(&mut ssl, codepoint, ALPN_H2_HTTP1).map_err(|e| named("--tls-alps", e))?;
     }
     if let Some(bytes) = &fingerprint.server_padding {
-        server_padding(bytes).map_err(|e| named("--tls-server-padding", e))?;
+        server_padding(bytes).map_err(|e| named("--tls-padding", e))?;
     }
     Ok(())
 }
@@ -1050,7 +1050,7 @@ pub fn build_config(params: &TlsParams) -> Result<quiche::Config> {
     alpn.push(consts::ALPN_H3.len() as u8);
     alpn.extend_from_slice(consts::ALPN_H3);
     Fingerprint::configured().apply(&mut builder, &alpn)?;
-    // QUIC carries TLS 1.3 alone, so the TLS 1.2 suites of --tls-ciphers never show here.
+    // QUIC carries TLS 1.3 alone, so the TLS 1.2 suites of --tls12-ciphers never show here.
     builder
         .set_min_proto_version(Some(SslVersion::TLS1_3))
         .map_err(|e| AetherError::Tls(e.to_string()))?;
@@ -1943,32 +1943,32 @@ mod tests {
             (
                 "AETHER_TLS_CERT_COMPRESSION",
                 "brotli:lzma",
-                "--tls-cert-compression",
+                "--tls-cert-compress",
             ),
             (
                 "AETHER_TLS_CERT_COMPRESSION",
                 "zlib:zlib",
-                "--tls-cert-compression",
+                "--tls-cert-compress",
             ),
             ("AETHER_TLS_ALPS", "h2", "--tls-alps"),
             (
                 "AETHER_TLS_TRUST_ANCHORS",
                 "11129.9.01",
-                "--tls-trust-anchors",
+                "--tls-anchors",
             ),
             (
                 "AETHER_TLS_TRUST_ANCHORS",
                 "11129..9",
-                "--tls-trust-anchors",
+                "--tls-anchors",
             ),
             (
                 "AETHER_TLS_TRUST_ANCHORS",
                 "11129.9.1:",
-                "--tls-trust-anchors",
+                "--tls-anchors",
             ),
-            ("AETHER_TLS_TRUST_ANCHORS", "0x2b.6", "--tls-trust-anchors"),
-            ("AETHER_TLS_SERVER_PADDING", "65536", "--tls-server-padding"),
-            ("AETHER_TLS_SERVER_PADDING", "-1", "--tls-server-padding"),
+            ("AETHER_TLS_TRUST_ANCHORS", "0x2b.6", "--tls-anchors"),
+            ("AETHER_TLS_SERVER_PADDING", "65536", "--tls-padding"),
+            ("AETHER_TLS_SERVER_PADDING", "-1", "--tls-padding"),
         ] {
             let (variable, value, flag) = refused;
             let kept = crate::settings::var(variable).expect("a value given above");
@@ -2048,7 +2048,7 @@ mod tests {
         );
         let refused = check_tls_options().expect_err("a suite BoringSSL does not know");
         assert!(
-            refused.to_string().starts_with("tls: --tls-ciphers: "),
+            refused.to_string().starts_with("tls: --tls12-ciphers: "),
             "{refused}"
         );
     }
@@ -2063,22 +2063,22 @@ mod tests {
             "X25519MLKEM768:X25519:P-256",
             "--tls-key-shares",
             "X25519:P-256",
-            "--enable-grease-sigalgs",
+            "--grease-sigalgs",
             "--tls-sigalgs",
             "mldsa44:ecdsa_secp256r1_sha256:ed25519",
-            "--tls-cert-compression",
+            "--tls-cert-compress",
             "brotli:zstd",
             "--tls-alps",
             "new",
-            "--tls-trust-anchors",
+            "--tls-anchors",
             "11129.9.1",
-            "--tls-server-padding",
+            "--tls-padding",
             "6000",
-            "--enable-ech-grease",
-            "--disable-ocsp-stapling",
-            "--disable-sct",
-            "--disable-session-ticket",
-            "--disable-extension-permutation",
+            "--ech-grease",
+            "--no-ocsp",
+            "--no-sct",
+            "--no-session-ticket",
+            "--no-ext-shuffle",
         ];
         let parsed = crate::cli::parse_args(words.iter().map(|word| word.to_string()).collect())
             .expect("options the core takes");
@@ -2140,7 +2140,7 @@ mod tests {
         let chrome = hello_of(&Fingerprint::default()).await;
         assert!(chrome.has_grease());
         assert!(chrome.has_grease_extension());
-        // Not among the signature algorithms, which take --enable-grease-sigalgs.
+        // Not among the signature algorithms, which take --grease-sigalgs.
         assert!(!chrome.has_grease_signature_algorithm());
         assert_eq!(chrome.versions(), [0x0304, 0x0303]);
         assert_eq!(chrome.groups(), [0x0017, 0x001d, 0x0018]);
@@ -2174,7 +2174,7 @@ mod tests {
         assert!(!ungreased.has_grease_signature_algorithm());
         assert_eq!(ungreased.groups(), chrome.groups());
 
-        // --enable-grease-sigalgs puts a GREASE value first among the signature algorithms, as
+        // --grease-sigalgs puts a GREASE value first among the signature algorithms, as
         // Chrome does, with the rest of GREASE or without it.
         for grease in [true, false] {
             let sigalgs = hello_of(&Fingerprint {

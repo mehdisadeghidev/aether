@@ -67,7 +67,7 @@ pub fn init() -> Result<()> {
     }
 
     #[cfg(not(any(target_os = "linux", target_os = "android")))]
-    log::warn!("[-] --mark only works on Linux and Android; sockets stay unmarked here");
+    log::warn!("[-] --fwmark only works on Linux and Android; sockets stay unmarked here");
 
     Ok(())
 }

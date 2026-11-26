@@ -49,7 +49,7 @@ const SCAN_MODE_PROMPT: &str = "\nScan mode:\n  [1] turbo     (fast, first hit)\
 
 pub(crate) const MIM_MANUAL_TIP: &str = "\n(tip: you can skip this scan and give the two masque hops yourself:\n        aether --mim --mim-outer <ip:port> --mim-inner <ip:port>\n      the port is required, and naming just the outer one lets aether pick\n      the inner edge for you)\n";
 
-pub(crate) const WIW_MANUAL_TIP: &str = "\n(tip: you can skip this scan and give the two gool hops yourself:\n        aether --gool --wiw-outer <ip:port> --wiw-inner <ip:port>\n      the port is required, and naming just one of the two lets the scan\n      find the other)\n";
+pub(crate) const WIW_MANUAL_TIP: &str = "\n(tip: you can skip this scan and give the two gool hops yourself:\n        aether --gool --gool-outer <ip:port> --gool-inner <ip:port>\n      the port is required, and naming just one of the two lets the scan\n      find the other)\n";
 
 pub(crate) async fn select_scan_mode_str(tip: &str) -> String {
     if let Ok(v) = crate::settings::var("AETHER_SCAN") {

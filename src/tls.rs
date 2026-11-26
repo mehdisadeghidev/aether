@@ -15,7 +15,7 @@ use ring::digest;
 use crate::consts;
 use crate::error::{AetherError, Result};
 
-extern "C" {
+unsafe extern "C" {
     fn SSL_set1_ech_config_list(
         ssl: *mut c_void,
         ech_config_list: *const u8,
@@ -1505,7 +1505,7 @@ mod tests {
         use boring::x509::{X509Builder, X509NameBuilder};
         use std::net::{TcpListener, TcpStream};
 
-        extern "C" {
+        unsafe extern "C" {
             fn EVP_HPKE_KEY_new() -> *mut c_void;
             fn EVP_HPKE_KEY_free(key: *mut c_void);
             fn EVP_hpke_x25519_hkdf_sha256() -> *const c_void;
@@ -2438,7 +2438,7 @@ mod tests {
         }
     }
 
-    extern "C" {
+    unsafe extern "C" {
         fn CBB_add_bytes(cbb: *mut c_void, data: *const u8, len: usize) -> c_int;
         fn SSL_has_application_settings(ssl: *const c_void) -> c_int;
         fn SSL_get0_peer_application_settings(

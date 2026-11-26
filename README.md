@@ -22,7 +22,7 @@ Unlike traditional VPN clients, Aether is built for environments where Deep Pack
 
 ## Docker
 
-The released artifact is a container image, `ghcr.io/cluvexstudio/aether:latest`. It is built on every push to `main` and every `v*` tag.
+The released artifact is a container image, `ghcr.io/cluvexstudio/aether:latest`. It is published by a manual run of the `Build and Publish` workflow, tagged with the commit hash and `latest`.
 
 > **The SOCKS5 proxy has no authentication.** Anyone who can reach the port can use your tunnel. Every command below publishes the port to `127.0.0.1` only, so it stays reachable from your own machine and nothing else. Do not replace it with `-p 1819:1819`, because that form listens on every interface of the host and turns the proxy into an open relay. If you genuinely need to serve other machines, put an authenticated front end in front of it and firewall the port.
 

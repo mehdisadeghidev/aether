@@ -6,7 +6,9 @@
 //! this module does is move whole IP packets between the device and the
 //! tunnel's packet channels. That is the entire difference between the two.
 
-use tokio::sync::oneshot;
+use std::net::{IpAddr, Ipv4Addr, Ipv6Addr};
+
+use tokio::sync::{mpsc, oneshot};
 
 use crate::relay::TaskGuard;
 
@@ -39,6 +41,62 @@ pub enum TunError {
 pub struct TunFrontend {
     fatal: Option<oneshot::Receiver<TunError>>,
     _guard: TaskGuard,
+}
+
+/// Where a tun front end sends the TCP a peer opens on it, instead of carrying
+/// it into the tunnel: a stack that terminates it, so the connection can be
+/// dialled out again somewhere else (through Psiphon, in the chained mode).
+/// Everything else still rides the tunnel, and so does TCP whose source is one
+/// of the addresses the tun was given — that is the machine's own traffic, and
+/// sending it to the stack would dial it back into itself.
+pub struct TunSplit {
+    pub to_stack: mpsc::Sender<Vec<u8>>,
+    pub from_stack: mpsc::Receiver<Vec<u8>>,
+    own: Vec<IpAddr>,
+}
+
+impl TunSplit {
+    pub fn new(
+        ipv4: &str,
+        ipv6: &str,
+        to_stack: mpsc::Sender<Vec<u8>>,
+        from_stack: mpsc::Receiver<Vec<u8>>,
+    ) -> Self {
+        let mut own = Vec::new();
+        if let Some(addr) = ipv4.split('/').next().and_then(|a| a.parse().ok()) {
+            own.push(IpAddr::V4(addr));
+        }
+        if let Some(addr) = ipv6.split('/').next().and_then(|a| a.parse().ok()) {
+            own.push(IpAddr::V6(addr));
+        }
+        Self {
+            to_stack,
+            from_stack,
+            own,
+        }
+    }
+}
+
+/// The source address and protocol number of an IPv4 or IPv6 packet, or None
+/// for anything else (a fragment with extension headers, a short packet).
+fn ip_source(packet: &[u8]) -> Option<(IpAddr, u8)> {
+    match packet.first()? >> 4 {
+        4 => {
+            let src = Ipv4Addr::new(
+                *packet.get(12)?,
+                *packet.get(13)?,
+                *packet.get(14)?,
+                *packet.get(15)?,
+            );
+            Some((IpAddr::V4(src), *packet.get(9)?))
+        }
+        6 => {
+            let mut octets = [0u8; 16];
+            octets.copy_from_slice(packet.get(8..24)?);
+            Some((IpAddr::V6(Ipv6Addr::from(octets)), *packet.get(6)?))
+        }
+        _ => None,
+    }
 }
 
 impl TunFrontend {
@@ -273,12 +331,24 @@ mod imp {
             inbound_rx: mpsc::Receiver<Vec<u8>>,
             outbound_tx: mpsc::Sender<Vec<u8>>,
         ) -> TunFrontend {
+            self.pump_split(mtu, inbound_rx, outbound_tx, None)
+        }
+
+        /// The same, with the TCP a peer opens on the device going to `split`
+        /// instead of into the tunnel.
+        pub fn pump_split(
+            &self,
+            mtu: usize,
+            inbound_rx: mpsc::Receiver<Vec<u8>>,
+            outbound_tx: mpsc::Sender<Vec<u8>>,
+            split: Option<super::TunSplit>,
+        ) -> TunFrontend {
             let fd = self.fd.clone();
             let name = self.name.clone();
             let (fatal_tx, fatal) = oneshot::channel();
 
             let task = tokio::spawn(async move {
-                if let Err(error) = carry(&fd, mtu, inbound_rx, outbound_tx).await {
+                if let Err(error) = carry(&fd, mtu, inbound_rx, outbound_tx, split).await {
                     log::warn!("[-] tun {name} stopped: {error}");
                     let _ = fatal_tx.send(error);
                     return;
@@ -304,13 +374,31 @@ mod imp {
         mtu: usize,
         mut inbound_rx: mpsc::Receiver<Vec<u8>>,
         outbound_tx: mpsc::Sender<Vec<u8>>,
+        split: Option<super::TunSplit>,
     ) -> std::result::Result<(), TunError> {
         // Exactly one packet fits, so a read can never hand us two of them.
         let mut buf = vec![0u8; mtu.max(576)];
+        let (to_stack, mut from_stack, own) = match split {
+            Some(split) => (Some(split.to_stack), Some(split.from_stack), split.own),
+            None => (None, None, Vec::new()),
+        };
 
         loop {
+            let from_stack_packet = async {
+                match from_stack.as_mut() {
+                    Some(rx) => rx.recv().await,
+                    None => std::future::pending().await,
+                }
+            };
+
             tokio::select! {
                 packet = inbound_rx.recv() => {
+                    let Some(packet) = packet else { return Ok(()) };
+                    stats::add_down(packet.len());
+                    write_packet(fd, &packet).await?;
+                }
+
+                packet = from_stack_packet => {
                     let Some(packet) = packet else { return Ok(()) };
                     stats::add_down(packet.len());
                     write_packet(fd, &packet).await?;
@@ -319,7 +407,16 @@ mod imp {
                 read = read_packet(fd, &mut buf) => {
                     let read = read?;
                     stats::add_up(read);
-                    if outbound_tx.send(buf[..read].to_vec()).await.is_err() {
+                    let packet = &buf[..read];
+                    let claimed = matches!(
+                        super::ip_source(packet),
+                        Some((src, 6)) if !own.contains(&src)
+                    );
+                    if let (true, Some(to_stack)) = (claimed, to_stack.as_ref()) {
+                        // A stack that cannot keep up drops the segment and the
+                        // peer retransmits, rather than stalling the device.
+                        let _ = to_stack.try_send(packet.to_vec());
+                    } else if outbound_tx.send(packet.to_vec()).await.is_err() {
                         return Ok(());
                     }
                 }
@@ -395,7 +492,7 @@ mod imp {
 
             let mover = tokio::spawn({
                 let device = device.clone();
-                async move { carry(&device, 1500, in_rx, out_tx).await }
+                async move { carry(&device, 1500, in_rx, out_tx, None).await }
             });
 
             in_tx.send(vec![1, 2, 3]).await.unwrap();
@@ -405,6 +502,71 @@ mod imp {
 
             peer.send(&[9, 9]).await.unwrap();
             assert_eq!(out_rx.recv().await.unwrap(), vec![9, 9]);
+
+            drop(in_tx);
+            assert!(mover.await.unwrap().is_ok());
+        }
+
+        fn v4(src: Ipv4Addr, protocol: u8) -> Vec<u8> {
+            let mut packet = vec![0u8; 20];
+            packet[0] = 0x45;
+            packet[9] = protocol;
+            packet[12..16].copy_from_slice(&src.octets());
+            packet
+        }
+
+        fn v6(src: Ipv6Addr, protocol: u8) -> Vec<u8> {
+            let mut packet = vec![0u8; 40];
+            packet[0] = 0x60;
+            packet[6] = protocol;
+            packet[8..24].copy_from_slice(&src.octets());
+            packet
+        }
+
+        /// With a split, a peer's tcp is handed to the stack that terminates it,
+        /// while the machine's own tcp, its udp and its icmp still ride the
+        /// tunnel: the first is what Psiphon carries, the rest is what carries
+        /// Psiphon and the tunnel itself.
+        #[tokio::test]
+        async fn the_split_takes_a_peers_tcp_and_leaves_the_rest_to_the_tunnel() {
+            let (device, peer) = tokio::net::UnixDatagram::pair().unwrap();
+            let device: OwnedFd = device.into_std().unwrap().into();
+            let device = std::sync::Arc::new(AsyncFd::new(device).unwrap());
+
+            let (in_tx, in_rx) = mpsc::channel(4);
+            let (out_tx, mut out_rx) = mpsc::channel(4);
+            let (to_stack_tx, mut to_stack_rx) = mpsc::channel(4);
+            let (from_stack_tx, from_stack_rx) = mpsc::channel(4);
+            let split = super::super::TunSplit::new(
+                "172.16.0.2/32",
+                "2606:4700:110:8a36::2/128",
+                to_stack_tx,
+                from_stack_rx,
+            );
+
+            let mover =
+                tokio::spawn(async move { carry(&device, 1500, in_rx, out_tx, Some(split)).await });
+
+            let theirs = v4(Ipv4Addr::new(10, 0, 0, 9), 6);
+            peer.send(&theirs).await.unwrap();
+            assert_eq!(to_stack_rx.recv().await.unwrap(), theirs);
+
+            let theirs6 = v6("2001:db8::9".parse().unwrap(), 6);
+            peer.send(&theirs6).await.unwrap();
+            assert_eq!(to_stack_rx.recv().await.unwrap(), theirs6);
+
+            let own = v4(Ipv4Addr::new(172, 16, 0, 2), 6);
+            peer.send(&own).await.unwrap();
+            assert_eq!(out_rx.recv().await.unwrap(), own);
+
+            let udp = v4(Ipv4Addr::new(10, 0, 0, 9), 17);
+            peer.send(&udp).await.unwrap();
+            assert_eq!(out_rx.recv().await.unwrap(), udp);
+
+            from_stack_tx.send(vec![7, 7]).await.unwrap();
+            let mut buf = [0u8; 1500];
+            let read = peer.recv(&mut buf).await.unwrap();
+            assert_eq!(&buf[..read], &[7, 7]);
 
             drop(in_tx);
             assert!(mover.await.unwrap().is_ok());
@@ -427,6 +589,19 @@ impl Tun {
         _mtu: usize,
         _inbound_rx: tokio::sync::mpsc::Receiver<Vec<u8>>,
         _outbound_tx: tokio::sync::mpsc::Sender<Vec<u8>>,
+    ) -> TunFrontend {
+        TunFrontend {
+            fatal: None,
+            _guard: TaskGuard::new(),
+        }
+    }
+
+    pub fn pump_split(
+        &self,
+        _mtu: usize,
+        _inbound_rx: tokio::sync::mpsc::Receiver<Vec<u8>>,
+        _outbound_tx: tokio::sync::mpsc::Sender<Vec<u8>>,
+        _split: Option<TunSplit>,
     ) -> TunFrontend {
         TunFrontend {
             fatal: None,

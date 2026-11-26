@@ -34,13 +34,11 @@ Pull and run (interactive mode is required for initial setup):
 docker run -it -p 127.0.0.1:1819:1819 -v aether-data:/data ghcr.io/cluvexstudio/aether:latest
 ```
 
-Skip the prompts by providing environment variables:
+Skip the prompts by passing flags:
 
 ```bash
 docker run -it -p 127.0.0.1:1819:1819 -v aether-data:/data \
-  -e AETHER_PROTOCOL=masque \
-  -e AETHER_SCAN=balanced \
-  ghcr.io/cluvexstudio/aether:latest
+  ghcr.io/cluvexstudio/aether:latest --masque --balanced
 ```
 
 ### A whole network through the tunnel
@@ -53,12 +51,8 @@ docker run -d --name aether --restart always \
   --cap-add NET_ADMIN \
   --device /dev/net/tun \
   -v aether-data:/data \
-  -e AETHER_TUN=tun0 \
-  -e AETHER_MARK=0xff \
-  -e AETHER_PROTOCOL=masque \
-  -e AETHER_MASQUE_HTTP2=1 \
-  -e AETHER_STATS=1 \
-  ghcr.io/cluvexstudio/aether:latest
+  ghcr.io/cluvexstudio/aether:latest \
+  --tun tun0 --mark 0xff --masque --h2 --stats
 ```
 
 Traffic that the kernel routes into `tun0` then goes through the tunnel, UDP and DNS included. On a router, mark the tunnel's own sockets with `--mark 0xff` and let that mark reach the internet directly, or the tunnel dials itself:
@@ -174,21 +168,6 @@ Built with the `tor` feature, Aether carries a Tor implementation (arti) and can
 ```
 
 With `--tor` the usual proxy on `127.0.0.1:1819` keeps the WARP exit and a second one on `127.0.0.1:1820` comes out of Tor. Because Tor rides inside the tunnel, a network that blocks Tor never sees it. Any transport can carry it — `--masque` over HTTP/3 or HTTP/2, `--wg`, `--gool`, `--mim` — with nothing in between: `--wg --tor` has the WireGuard tunnel carry Tor directly. The other direction cannot do that, because Tor carries TCP only and WARP's WireGuard endpoints answer on UDP alone, so `--tor-reverse` runs MASQUE over HTTP/2 (for `--gool`, its MASQUE hop) and refuses `--wg` and `--gool-classic`. `--tor-reverse` and `--tor-only` reach Tor directly, and where Tor is blocked they fetch their own bridges from bridgedb and run them through the pluggable transports in the `pt/` folder, so there is nothing to install and nothing to paste in.
-
-## Repository layout
-
-```text
-src/            the crate
-Cargo.toml      its manifest; quiche and octets come from crates.io
-scripts/        build helpers: pluggable transports, psiphon, h2 benchmark
-Dockerfile      the released image
-```
-
-## Contributing
-
-> **Experienced network developers and protocol engineers are welcome to contribute.**
-
-> **Please keep the codebase clean, maintainable, and well-engineered. Low-quality or vibe-coded contributions will not be accepted.**
 
 ## License
 

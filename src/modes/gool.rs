@@ -3,16 +3,16 @@ use std::net::{IpAddr, SocketAddr};
 use std::time::Instant;
 
 use super::{
-    count_tunnel_end, env_value, exit_policy_guard, masque_tunnel_mtu, noize_config, spread_hops,
-    verified_scan_selected, Frontend, Listeners, TunnelError, INNER_MTU, TUNNEL_MTU,
+    Frontend, INNER_MTU, Listeners, TUNNEL_MTU, TunnelError, count_tunnel_end, env_value,
+    exit_policy_guard, masque_tunnel_mtu, noize_config, spread_hops, verified_scan_selected,
 };
 use crate::error::{AetherError, Result};
-use crate::modes::endpoints::{parse_endpoint, wiw_endpoints_with_fallback, WG_EXAMPLE_PORT};
-use crate::modes::masque::{establish_masque, masque_startup_timeout, Hop};
+use crate::modes::endpoints::{WG_EXAMPLE_PORT, parse_endpoint, wiw_endpoints_with_fallback};
+use crate::modes::masque::{Hop, establish_masque, masque_startup_timeout};
 use crate::modes::wireguard::{establish_wg, select_wg_peers, wg_reconnect_delay};
-use crate::prompt::{select_ip_version, select_scan_mode_str, WIW_MANUAL_TIP};
+use crate::prompt::{WIW_MANUAL_TIP, select_ip_version, select_scan_mode_str};
 use crate::provision::provision_gool;
-use crate::relay::{join_outcome, spawn_udp_forwarder, TaskGuard};
+use crate::relay::{TaskGuard, join_outcome, spawn_udp_forwarder};
 use crate::{
     account, config, exitloc, masque_h2, netstack, prober, quic, socks, upstream, wireguard,
 };

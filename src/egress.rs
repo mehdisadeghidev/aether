@@ -167,7 +167,7 @@ where
                 None => {
                     return Err(last_error.unwrap_or_else(|| {
                         io::Error::new(io::ErrorKind::NotFound, "no address to connect to")
-                    }))
+                    }));
                 }
             }
         }

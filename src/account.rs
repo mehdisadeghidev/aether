@@ -1712,13 +1712,15 @@ mod tests {
             routes_by_address(&api_routes_of(None, None, given.clone(), None)),
             api_routes_of(None, None, given, None)
         );
-        assert!(routes_by_address(&api_routes_of(
-            Some("api.example.com".to_string()),
-            None,
-            None,
-            None
-        ))
-        .is_empty());
+        assert!(
+            routes_by_address(&api_routes_of(
+                Some("api.example.com".to_string()),
+                None,
+                None,
+                None
+            ))
+            .is_empty()
+        );
     }
 
     #[test]

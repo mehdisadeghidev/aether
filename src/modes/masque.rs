@@ -3,9 +3,9 @@ use std::net::{IpAddr, SocketAddr};
 use std::time::Instant;
 
 use super::{
-    count_tunnel_end, exit_policy_guard, masque_tunnel_mtu, noize_config, noize_profile,
-    packet_wire, parse_local_v4, scan_settings_from_env, team_endpoint, Frontend, TunnelError,
-    TunnelExit, Wire,
+    Frontend, TunnelError, TunnelExit, Wire, count_tunnel_end, exit_policy_guard,
+    masque_tunnel_mtu, noize_config, noize_profile, packet_wire, parse_local_v4,
+    scan_settings_from_env, team_endpoint,
 };
 use crate::error::{AetherError, Result};
 use crate::modes::gool::run_gool_tunnel;
@@ -250,7 +250,7 @@ pub(crate) async fn run_masque(
                             peer
                         }
                         Err(_) => {
-                            return Err(AetherError::from(TunnelError::BadPeer(p.to_string())))
+                            return Err(AetherError::from(TunnelError::BadPeer(p.to_string())));
                         }
                     },
                     None => match hunt_masque_peer(

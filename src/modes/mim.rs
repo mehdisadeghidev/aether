@@ -3,17 +3,17 @@ use std::net::{IpAddr, Ipv4Addr, SocketAddr};
 use std::time::Instant;
 
 use super::{
-    count_tunnel_end, edge_network, exit_policy_guard, masque_tunnel_mtu, noize_config,
-    verified_scan_selected, Listeners, TunnelError, TUNNEL_MTU,
+    Listeners, TUNNEL_MTU, TunnelError, count_tunnel_end, edge_network, exit_policy_guard,
+    masque_tunnel_mtu, noize_config, verified_scan_selected,
 };
 use crate::error::{AetherError, Result};
 use crate::modes::endpoints::mim_endpoints_from_env;
 use crate::modes::masque::{
-    establish_masque, hunt_masque_peer, masque_reconnect_delay, masque_startup_timeout, Hop,
-    MasqueHop,
+    Hop, MasqueHop, establish_masque, hunt_masque_peer, masque_reconnect_delay,
+    masque_startup_timeout,
 };
-use crate::prompt::{select_ip_version, select_scan_mode_str, MIM_MANUAL_TIP};
-use crate::relay::{join_outcome, spawn_tcp_forwarder, spawn_udp_forwarder, TaskGuard};
+use crate::prompt::{MIM_MANUAL_TIP, select_ip_version, select_scan_mode_str};
+use crate::relay::{TaskGuard, join_outcome, spawn_tcp_forwarder, spawn_udp_forwarder};
 use crate::{account, exitloc, masque_h2, prober, quic, tls};
 
 const MASQUE_DATAGRAM_OVERHEAD: usize = quic::MAX_DATAGRAM_SIZE - TUNNEL_MTU;
@@ -502,8 +502,10 @@ mod tests {
 
         assert_eq!(candidates.len(), 4);
         assert!(candidates.iter().all(|candidate| candidate.is_ipv6()));
-        assert!(candidates
-            .iter()
-            .all(|candidate| candidate.ip() != outer.ip()));
+        assert!(
+            candidates
+                .iter()
+                .all(|candidate| candidate.ip() != outer.ip())
+        );
     }
 }

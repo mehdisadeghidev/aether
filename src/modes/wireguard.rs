@@ -3,8 +3,8 @@ use std::net::{IpAddr, SocketAddr};
 use std::time::Instant;
 
 use super::{
-    aethernoize_config, count_tunnel_end, exit_policy_guard, packet_wire, scan_settings_from_env,
-    team_endpoint, Frontend, TunnelError, TunnelExit, Wire, TUNNEL_MTU,
+    Frontend, TUNNEL_MTU, TunnelError, TunnelExit, Wire, aethernoize_config, count_tunnel_end,
+    exit_policy_guard, packet_wire, scan_settings_from_env, team_endpoint,
 };
 use crate::error::{AetherError, Result};
 use crate::prompt::{select_ip_version, select_scan_mode_str, want_quick_reconnect};
@@ -177,7 +177,9 @@ async fn hunt_wg_peer(
             }
             Err(e) => {
                 if multi {
-                    log::warn!("[-] profile '{name}' found no data-plane endpoint: {e}; trying next profile");
+                    log::warn!(
+                        "[-] profile '{name}' found no data-plane endpoint: {e}; trying next profile"
+                    );
                 } else {
                     log::warn!("[-] profile '{name}' found no data-plane endpoint: {e}");
                 }
@@ -347,7 +349,9 @@ pub(crate) async fn run_wireguard(
                     {
                         Ok(_) => Some(last_good.clone().unwrap()),
                         Err(e) => {
-                            log::warn!("[-] last known-good endpoint {p} no longer responds ({e}); rescanning");
+                            log::warn!(
+                                "[-] last known-good endpoint {p} no longer responds ({e}); rescanning"
+                            );
                             None
                         }
                     }
@@ -413,7 +417,9 @@ pub(crate) async fn run_wireguard(
                         match hunt_wg_peer(&identity, &candidates, &mode_str, ip, &excluded).await {
                             Ok(v) => v,
                             Err(e) => {
-                                log::warn!("[-] no usable WireGuard endpoint found: {e}; rescanning shortly");
+                                log::warn!(
+                                    "[-] no usable WireGuard endpoint found: {e}; rescanning shortly"
+                                );
                                 tokio::time::sleep(wg_reconnect_delay()).await;
                                 continue;
                             }
@@ -480,7 +486,9 @@ pub(crate) async fn run_wireguard_tunnel(
     let peer_public = identity.peer_public_key_bytes()?;
     let ipv4 = identity.local_ipv4()?;
 
-    log::info!("[*] validating WireGuard tunnel with {peer} (handshake + data-plane) before serving socks5...");
+    log::info!(
+        "[*] validating WireGuard tunnel with {peer} (handshake + data-plane) before serving socks5..."
+    );
     let (_, session) = wireguard::verify_endpoint_keep_session(
         &wireguard::Probe {
             peer,

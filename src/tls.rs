@@ -1,4 +1,4 @@
-use std::ffi::{c_char, c_void, CStr, CString};
+use std::ffi::{CStr, CString, c_char, c_void};
 use std::io::Read;
 use std::os::raw::c_int;
 use std::ptr;
@@ -840,8 +840,7 @@ pub fn check_tls_options() -> Result<()> {
         set_sigalgs(&mut builder, list).map_err(|e| named("--tls-sigalgs", e))?;
     }
     if let Some(list) = &fingerprint.cert_compression {
-        offer_cert_compression(&mut builder, list)
-            .map_err(|e| named("--tls-cert-compress", e))?;
+        offer_cert_compression(&mut builder, list).map_err(|e| named("--tls-cert-compress", e))?;
     }
     if let Some(list) = &fingerprint.trust_anchors {
         ask_trust_anchors(&mut builder, list).map_err(|e| named("--tls-anchors", e))?;
@@ -1476,9 +1475,11 @@ mod tests {
     fn every_pin_is_named_and_no_key_is_pinned_twice() {
         for (at, pin) in consts::MASQUE_PINS.iter().enumerate() {
             assert!(!pin.name.is_empty());
-            assert!(consts::MASQUE_PINS[at + 1..]
-                .iter()
-                .all(|other| other.spki_sha256 != pin.spki_sha256 && other.name != pin.name));
+            assert!(
+                consts::MASQUE_PINS[at + 1..]
+                    .iter()
+                    .all(|other| other.spki_sha256 != pin.spki_sha256 && other.name != pin.name)
+            );
         }
     }
 
@@ -1743,8 +1744,7 @@ mod tests {
     }
 
     /// Cloudflare's key of cloudflare-ech.com on 2026-10-01.
-    const CLOUDFLARE_ECH: &str =
-        "AEX+DQBBrwAgACCbK1mYDYFz/BAn6S5t+Q/v+Oej3eFNxtPWgz50fNnFPAAEAAEAAQASY2xvdWRmbGFyZS1lY2guY29tAAA=";
+    const CLOUDFLARE_ECH: &str = "AEX+DQBBrwAgACCbK1mYDYFz/BAn6S5t+Q/v+Oej3eFNxtPWgz50fNnFPAAEAAEAAQASY2xvdWRmbGFyZS1lY2guY29tAAA=";
 
     /// Why `option` found no key, from the error it ends with, which says NO_ECH_KEY first.
     fn no_key_reason(option: &EchOption, outcome: Result<Option<Vec<u8>>>) -> String {
@@ -1951,21 +1951,9 @@ mod tests {
                 "--tls-cert-compress",
             ),
             ("AETHER_TLS_ALPS", "h2", "--tls-alps"),
-            (
-                "AETHER_TLS_TRUST_ANCHORS",
-                "11129.9.01",
-                "--tls-anchors",
-            ),
-            (
-                "AETHER_TLS_TRUST_ANCHORS",
-                "11129..9",
-                "--tls-anchors",
-            ),
-            (
-                "AETHER_TLS_TRUST_ANCHORS",
-                "11129.9.1:",
-                "--tls-anchors",
-            ),
+            ("AETHER_TLS_TRUST_ANCHORS", "11129.9.01", "--tls-anchors"),
+            ("AETHER_TLS_TRUST_ANCHORS", "11129..9", "--tls-anchors"),
+            ("AETHER_TLS_TRUST_ANCHORS", "11129.9.1:", "--tls-anchors"),
             ("AETHER_TLS_TRUST_ANCHORS", "0x2b.6", "--tls-anchors"),
             ("AETHER_TLS_SERVER_PADDING", "65536", "--tls-padding"),
             ("AETHER_TLS_SERVER_PADDING", "-1", "--tls-padding"),
@@ -2290,7 +2278,9 @@ mod tests {
                  rsa_pkcs1_sha1:ecdsa_sha1:ecdsa_secp521r1_sha512"
             )
             .expect("names BoringSSL has"),
-            [0x0904, 0x0905, 0x0906, 0x0807, 0x0403, 0x0804, 0x0201, 0x0203, 0x0603]
+            [
+                0x0904, 0x0905, 0x0906, 0x0807, 0x0403, 0x0804, 0x0201, 0x0203, 0x0603
+            ]
         );
         // ECDSA's names go with their curve; MD5-SHA1 only signs TLS 1.1 and older.
         for refused in [
@@ -2385,7 +2375,9 @@ mod tests {
         let hello = hello_offering(&chrome_120, H2_HTTP1).await;
         assert_eq!(
             hello.signature_algorithms(),
-            [0x0403, 0x0804, 0x0401, 0x0503, 0x0805, 0x0501, 0x0806, 0x0601]
+            [
+                0x0403, 0x0804, 0x0401, 0x0503, 0x0805, 0x0501, 0x0806, 0x0601
+            ]
         );
         assert_eq!(hello.alps(0x4469), Some(vec![b"h2".to_vec()]));
         assert_eq!(hello.alps(0x44cd), None);

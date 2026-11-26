@@ -196,11 +196,13 @@ mod tests {
 
     #[test]
     fn the_same_masque_edge_cannot_serve_as_both_hops() {
-        assert!(mim_endpoints_of(&env(&[(
-            "AETHER_MIM_PEERS",
-            "162.159.192.1:443,162.159.192.1:8443"
-        )]))
-        .is_err());
+        assert!(
+            mim_endpoints_of(&env(&[(
+                "AETHER_MIM_PEERS",
+                "162.159.192.1:443,162.159.192.1:8443"
+            )]))
+            .is_err()
+        );
     }
 
     #[test]

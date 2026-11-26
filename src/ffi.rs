@@ -272,12 +272,12 @@ fn socket_of(raw: &str, label: &str) -> std::result::Result<SocketAddr, String> 
         .map_err(|_| format!("{label} '{raw}' is not an address:port"))
 }
 
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub extern "C" fn aether_version() -> *mut c_char {
     respond(|| Ok(json!({"version": env!("CARGO_PKG_VERSION")})))
 }
 
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub unsafe extern "C" fn aether_string_free(raw: *mut c_char) {
     if raw.is_null() {
         return;
@@ -287,7 +287,7 @@ pub unsafe extern "C" fn aether_string_free(raw: *mut c_char) {
     }));
 }
 
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub extern "C" fn aether_job_poll(id: u64) -> *mut c_char {
     respond(|| {
         let registry = jobs().lock();
@@ -302,7 +302,7 @@ pub extern "C" fn aether_job_poll(id: u64) -> *mut c_char {
     })
 }
 
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub extern "C" fn aether_job_cancel(id: u64) -> *mut c_char {
     respond(|| {
         let registry = jobs().lock();
@@ -314,7 +314,7 @@ pub extern "C" fn aether_job_cancel(id: u64) -> *mut c_char {
     })
 }
 
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub extern "C" fn aether_job_free(id: u64) -> *mut c_char {
     respond(|| {
         let removed = jobs().lock().remove(&id);
@@ -328,7 +328,7 @@ pub extern "C" fn aether_job_free(id: u64) -> *mut c_char {
     })
 }
 
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub unsafe extern "C" fn aether_identity_open(payload: *const c_char) -> *mut c_char {
     respond(|| {
         let payload: OpenPayload = unsafe { read_json(payload) }?;
@@ -368,7 +368,7 @@ pub unsafe extern "C" fn aether_identity_open(payload: *const c_char) -> *mut c_
     })
 }
 
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub extern "C" fn aether_identity_summary(id: u64) -> *mut c_char {
     respond(|| {
         let identity = identity_of(id)?;
@@ -376,7 +376,7 @@ pub extern "C" fn aether_identity_summary(id: u64) -> *mut c_char {
     })
 }
 
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub extern "C" fn aether_identity_free(id: u64) -> *mut c_char {
     respond(|| {
         identities().lock().remove(&id);
@@ -384,7 +384,7 @@ pub extern "C" fn aether_identity_free(id: u64) -> *mut c_char {
     })
 }
 
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub unsafe extern "C" fn aether_scan_start(identity: u64, payload: *const c_char) -> *mut c_char {
     respond(|| {
         let payload: ScanPayload = unsafe { read_json(payload) }?;
@@ -446,7 +446,7 @@ fn tunnel_spec_of(payload: &TunnelPayload) -> std::result::Result<api::TunnelSpe
     Ok(spec)
 }
 
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub unsafe extern "C" fn aether_verify_start(identity: u64, payload: *const c_char) -> *mut c_char {
     respond(|| {
         let payload: TunnelPayload = unsafe { read_json(payload) }?;
@@ -466,7 +466,7 @@ pub unsafe extern "C" fn aether_verify_start(identity: u64, payload: *const c_ch
     })
 }
 
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub unsafe extern "C" fn aether_tunnel_start(identity: u64, payload: *const c_char) -> *mut c_char {
     respond(|| {
         let payload: TunnelPayload = unsafe { read_json(payload) }?;
@@ -488,7 +488,7 @@ pub unsafe extern "C" fn aether_tunnel_start(identity: u64, payload: *const c_ch
     })
 }
 
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub unsafe extern "C" fn aether_core_start(arguments: *const c_char) -> *mut c_char {
     respond(|| {
         let arguments: Vec<String> = if arguments.is_null() {
@@ -517,7 +517,7 @@ pub unsafe extern "C" fn aether_core_start(arguments: *const c_char) -> *mut c_c
     })
 }
 
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub unsafe extern "C" fn aether_team_sign_in(payload: *const c_char) -> *mut c_char {
     respond(|| {
         let payload: TeamPayload = unsafe { read_json(payload) }?;
@@ -530,7 +530,7 @@ pub unsafe extern "C" fn aether_team_sign_in(payload: *const c_char) -> *mut c_c
     })
 }
 
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub unsafe extern "C" fn aether_team_code_request(payload: *const c_char) -> *mut c_char {
     respond(|| {
         let payload: TeamPayload = unsafe { read_json(payload) }?;
@@ -554,7 +554,7 @@ pub unsafe extern "C" fn aether_team_code_request(payload: *const c_char) -> *mu
     })
 }
 
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub extern "C" fn aether_team_code_resend(session: u64) -> *mut c_char {
     respond(|| {
         let session = session_of(session)?;
@@ -569,7 +569,7 @@ pub extern "C" fn aether_team_code_resend(session: u64) -> *mut c_char {
     })
 }
 
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub unsafe extern "C" fn aether_team_code_submit(session: u64, code: *const c_char) -> *mut c_char {
     respond(|| {
         let code = unsafe { read_str(code) }?;
@@ -588,7 +588,7 @@ pub unsafe extern "C" fn aether_team_code_submit(session: u64, code: *const c_ch
     })
 }
 
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub extern "C" fn aether_team_session_free(id: u64) -> *mut c_char {
     respond(|| {
         sessions().lock().remove(&id);
@@ -596,7 +596,7 @@ pub extern "C" fn aether_team_session_free(id: u64) -> *mut c_char {
     })
 }
 
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub unsafe extern "C" fn aether_team_token_set(token: *const c_char) -> *mut c_char {
     respond(|| {
         let token = unsafe { read_str(token) }?;
@@ -608,7 +608,7 @@ pub unsafe extern "C" fn aether_team_token_set(token: *const c_char) -> *mut c_c
     })
 }
 
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub extern "C" fn aether_team_token_clear() -> *mut c_char {
     respond(|| {
         let runtime = runtime().ok_or_else(|| "could not start the async runtime".to_string())?;

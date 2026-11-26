@@ -59,7 +59,7 @@ nft add chain ip aether post '{ type nat hook postrouting priority 100 ; }'
 nft add rule ip aether post oifname "tun0" masquerade
 ```
 
-The masquerade keeps the source address WARP assigned; without it the handshake succeeds and no data ever comes back. `--tun` replaces the SOCKS front end, so `--bind`, `--http-proxy` and `--routes` are ignored, and modes that need the userspace TCP stack it provides (`--gool`, `--gool-classic`, `--mim`, `--tor-only`, `--psiphon-only`, `--team`, `--gateway`, `--exit-country`) are refused at startup.
+The masquerade keeps the source address WARP assigned; without it the handshake succeeds and no data ever comes back. `--tun` replaces the SOCKS front end, so `--bind`, `--http-proxy` and `--routes` are ignored, and modes that need the userspace TCP stack it provides (`--gool`, `--gool-classic`, `--mim`, `--tor-only`, `--psiphon-only`, `--team`, `--gateway`, `--exit-country`) are refused at startup. So is `--tor`: a carrier inside the tunnel dials the socks5 listener it lives behind, and `--tun` never binds one; put it under the tunnel with `--tor-reverse`. `--psiphon` does work with a tun, differently: the tun's TCP is terminated by a stack of its own and each connection is dialled through Psiphon, which rides the tunnel like any other program on the machine, so TCP exits at a Psiphon exit while UDP keeps exiting at WARP.
 
 #### Build the image yourself
 
@@ -181,7 +181,7 @@ Psiphon needs no build feature; the `psiphon-tunnel-core` binary is enough, foun
 ./target/release/aether --psiphon
 ```
 
-As with Tor, the chained mode serves the WARP exit on `--bind` and a second proxy on `--psiphon-bind`. `--psiphon-reverse` carries TCP only, so it runs MASQUE over HTTP/2 and refuses `--wg` and `--gool-classic`. `--psiphon-mode cdn` keeps Psiphon on meek through a CDN, for networks that block everything else.
+As with Tor, the chained mode serves the WARP exit on `--bind` and a second proxy on `--psiphon-bind`; that is the socks5 front end it dials the tunnel through, and with `--tun` there is none, so it dials out as any other program on the machine does and the tun's TCP is handed to it instead: same exit, no proxy needed. `--psiphon-reverse` carries TCP only, so it runs MASQUE over HTTP/2 and refuses `--wg` and `--gool-classic`. `--psiphon-mode cdn` keeps Psiphon on meek through a CDN, for networks that block everything else.
 
 ## Exit countries
 

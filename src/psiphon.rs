@@ -1005,6 +1005,33 @@ pub async fn run_chain(through: SocketAddr, state: PathBuf) -> Result<()> {
     relay_to(running, listen, socks_listener, http).await
 }
 
+/// The chained mode with a tun front end. There is no socks5 listener to dial the tunnel through
+/// — the kernel routes the machine's own packets into the tun — so Psiphon dials out as any other
+/// program here does, and the TCP that leaves the tun is handed to its listener instead. That is
+/// you → WARP → Psiphon → internet, with the tunnel carrying both Psiphon and everything else.
+pub async fn run_chain_on_tun(state: PathBuf) -> Result<()> {
+    binary().ok_or_else(|| PsiphonError::NotInstalled(install_hint()))?;
+    let listen = listen_address();
+    let socks_listener =
+        crate::socks::bind_listener("psiphon socks5", listen, "--psiphon-bind").await?;
+    let listen = socks_listener.local_addr().unwrap_or(listen);
+    let http = bind_http().await?;
+    log::info!("[*] starting psiphon through the tun");
+
+    let running = start(
+        &state,
+        BEHIND_HELD,
+        http.as_ref().map(|_| BEHIND_HELD),
+        upstream_url(),
+        Placement::BehindHeld,
+    )
+    .await?;
+    log::info!("[+] psiphon is ready; {listen} leaves through psiphon, carried by the tun");
+    announce(running.socks, "psiphon through the tun");
+
+    relay_to(running, listen, socks_listener, http).await
+}
+
 /// Binds Psiphon's http proxy when one is asked for, with --psiphon-http, to be held for it: the
 /// listener and the address it got.
 async fn bind_http() -> Result<Option<(SocketAddr, tokio::net::TcpListener)>> {
@@ -1259,9 +1286,11 @@ mod tests {
 
         assert_eq!(parsed["PropagationChannelId"], PROPAGATION_CHANNEL_ID);
         assert_eq!(parsed["SponsorId"], SPONSOR_ID);
-        assert!(parsed["RemoteServerListSignaturePublicKey"]
-            .as_str()
-            .is_some_and(|key| key.len() > 100));
+        assert!(
+            parsed["RemoteServerListSignaturePublicKey"]
+                .as_str()
+                .is_some_and(|key| key.len() > 100)
+        );
         assert_eq!(parsed["LocalSocksProxyPort"], 1821);
         assert_eq!(parsed["DisableLocalHTTPProxy"], true);
 
@@ -1443,9 +1472,11 @@ mod tests {
             .as_array()
             .expect("a protocol list");
         assert!(!offered.is_empty());
-        assert!(offered
-            .iter()
-            .all(|name| !name.as_str().unwrap_or("").starts_with("FRONTED")));
+        assert!(
+            offered
+                .iter()
+                .all(|name| !name.as_str().unwrap_or("").starts_with("FRONTED"))
+        );
 
         clear();
     }
@@ -1540,11 +1571,13 @@ mod tests {
             listen_interface("0.0.0.0:1821".parse().expect("an address")).as_deref(),
             Some("any")
         );
-        assert!(effective_ip(
-            "0.0.0.0:1821".parse().expect("an address"),
-            Placement::Dialled
-        )
-        .is_unspecified());
+        assert!(
+            effective_ip(
+                "0.0.0.0:1821".parse().expect("an address"),
+                Placement::Dialled
+            )
+            .is_unspecified()
+        );
 
         clear();
     }
